@@ -1,0 +1,91 @@
+[
+  {
+    "name": "SO2",
+    "address": 0,
+    "unit": "ppm",
+    "formula": "x",
+    "device": "GasAnalyzer",
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "byteOrder": "Float AB CD",
+    "addressBase": 0
+  },
+  {
+    "device": "GasAnalyzer",
+    "name": "NOx",
+    "address": 2,
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "addressBase": 0,
+    "unit": "ppm",
+    "formula": "x"
+  },
+  {
+    "device": "GasAnalyzer",
+    "name": "O2",
+    "address": 4,
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "addressBase": 0,
+    "unit": "%",
+    "formula": "x"
+  },
+  {
+    "device": "GasAnalyzer",
+    "name": "CO",
+    "address": 6,
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "addressBase": 0,
+    "unit": "ppm",
+    "formula": "x"
+  },
+  {
+    "device": "DustSensor",
+    "name": "Dust",
+    "address": 0,
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "addressBase": 0,
+    "unit": "mg/m³",
+    "formula": "x"
+  },
+  {
+    "device": "FlowSensor",
+    "name": "Temperature",
+    "address": 0,
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "addressBase": 0,
+    "unit": "°C",
+    "formula": "x"
+  },
+  {
+    "device": "FlowSensor",
+    "name": "Velocity",
+    "address": 2,
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "addressBase": 0,
+    "unit": "m/s",
+    "formula": "x"
+  },
+  {
+    "device": "FlowSensor",
+    "name": "Pressure",
+    "address": 4,
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "addressBase": 0,
+    "unit": "Pa",
+    "formula": "x"
+  }
+]

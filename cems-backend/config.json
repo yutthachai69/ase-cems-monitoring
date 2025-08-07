@@ -1,0 +1,41 @@
+{
+  "connection": {
+    "devices": [
+      {
+        "name": "GasAnalyzer",
+        "mode": "tcp",
+        "ip": "127.0.0.1",
+        "port": 1502,
+        "slaveId": 1,
+        "registerType": "holding"
+      },
+      {
+        "name": "DustSensor",
+        "mode": "tcp",
+        "slaveId": 1,
+        "registerType": "holding",
+        "ip": "127.0.0.1",
+        "port": 503
+      },
+      {
+        "name": "FlowSensor",
+        "mode": "tcp",
+        "slaveId": 1,
+        "registerType": "holding",
+        "ip": "127.0.0.1",
+        "port": 504
+      }
+    ],
+    "alarm_threshold": {
+      "SO2": 200,
+      "CO": 100,
+      "Dust": 50
+    },
+    "log_interval": 60,
+    "reconnect_interval": 60
+  },
+  "stack_info": {
+    "area": 49.736,
+    "diameter": 7.958
+  }
+}

@@ -1,0 +1,98 @@
+[
+  {
+    "name": "SO2",
+    "address": 0,
+    "unit": "ppm",
+    "formula": "x",
+    "device": "GasAnalyzer",
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "byteOrder": "Float AB CD",
+    "addressBase": 0
+  },
+  {
+    "name": "NOx",
+    "address": 2,
+    "unit": "ppm",
+    "formula": "x",
+    "device": "GasAnalyzer",
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "byteOrder": "Float AB CD",
+    "addressBase": 0
+  },
+  {
+    "name": "O2",
+    "address": 4,
+    "unit": "%",
+    "formula": "x",
+    "device": "GasAnalyzer",
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "byteOrder": "Float AB CD",
+    "addressBase": 0
+  },
+  {
+    "name": "CO",
+    "address": 6,
+    "unit": "ppm",
+    "formula": "x",
+    "device": "GasAnalyzer",
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "byteOrder": "Float AB CD",
+    "addressBase": 0
+  },
+  {
+    "name": "Dust",
+    "address": 8,
+    "unit": "mg/m³",
+    "formula": "x",
+    "device": "GasAnalyzer",
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "byteOrder": "Float AB CD",
+    "addressBase": 0
+  },
+  {
+    "name": "Temperature",
+    "address": 10,
+    "unit": "°C",
+    "formula": "x",
+    "device": "GasAnalyzer",
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "byteOrder": "Float AB CD",
+    "addressBase": 0
+  },
+  {
+    "name": "Velocity",
+    "address": 12,
+    "unit": "m/s",
+    "formula": "x",
+    "device": "GasAnalyzer",
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "byteOrder": "Float AB CD",
+    "addressBase": 0
+  },
+  {
+    "name": "Pressure",
+    "address": 14,
+    "unit": "Pa",
+    "formula": "x",
+    "device": "GasAnalyzer",
+    "dataType": "float32",
+    "dataFormat": "Float AB CD",
+    "registerCount": 2,
+    "byteOrder": "Float AB CD",
+    "addressBase": 0
+  }
+]

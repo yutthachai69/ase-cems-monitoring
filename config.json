@@ -1,0 +1,25 @@
+{
+  "connection": {
+    "devices": [
+      {
+        "name": "GasAnalyzer",
+        "mode": "tcp",
+        "ip": "127.0.0.1",
+        "port": 502,
+        "slaveId": 1,
+        "registerType": "holding"
+      }
+    ],
+    "alarm_threshold": {
+      "SO2": 200,
+      "CO": 100,
+      "Dust": 50
+    },
+    "log_interval": 60,
+    "reconnect_interval": 60
+  },
+  "stack_info": {
+    "area": 1.0,
+    "diameter": 1.0
+  }
+}
