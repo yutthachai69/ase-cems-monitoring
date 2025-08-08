@@ -1,4 +1,5 @@
 import asyncio, json, csv, os, random, sys
+from datetime import datetime, timedelta
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -14,6 +15,8 @@ import sys, io
 async def lifespan(app: FastAPI):
     load_config()
     load_mapping()
+    # ไม่สแกน Modbus โดยอัตโนมัติ - รอให้ผู้ใช้ตั้งค่าเอง
+    # asyncio.create_task(auto_scan_modbus_devices())
     asyncio.create_task(logging_task())
     yield
 
@@ -79,19 +82,10 @@ def add_system_alert(message: str):
 def load_config():
     global current_config, LOG_INTERVAL, RECONNECT_INTERVAL
     if not os.path.exists(CONFIG_FILE):
-        # ✅ สร้าง config เริ่มต้นแบบใหม่
+        # ✅ สร้าง config เริ่มต้นแบบใหม่ - ไม่มีอุปกรณ์เริ่มต้น
         default_config = {
             "connection": {
-                "devices": [
-                    {
-                        "name": "GasAnalyzer",
-                        "mode": "tcp",
-                        "ip": "127.0.0.1",
-                        "port": 502,
-                        "slaveId": 1,
-                        "registerType": "holding"
-                    }
-                ],
+                "devices": [],  # ไม่มีอุปกรณ์เริ่มต้น - รอให้ผู้ใช้เพิ่ม
                 "alarm_threshold": {"SO2": 200, "CO": 100, "Dust": 50},
                 "log_interval": 60,
                 "reconnect_interval": 60
@@ -404,103 +398,200 @@ def write_log_to_csv(timestamp: str, gas_values: dict):
 # ---------------------
 # ✅ Gas Data Fetch (Multi-Device + Logic เดิม)
 # ---------------------
-async def get_gas_data() -> dict:
+async def read_device_data(client, device_name: str) -> dict:
+    """อ่านข้อมูลจาก Modbus device ตาม mapping"""
     global alarm_values
     data = {}
-    print("[get_gas_data] mapping_config:", mapping_config)
-    print("[get_gas_data] current_config:", current_config)
-
-    for m in mapping_config:
-        device_name = m.get("device")
-        print(f"[get_gas_data] reading {m['name']} from {device_name}")
-        client = await get_modbus_client(device_name)
-        print(f"[get_gas_data] client for {device_name}:", client)
-        # ✅ แก้ไขการเข้าถึง devices ให้ตรงกับโครงสร้าง config ใหม่
+    
+    try:
+        # หา mapping สำหรับ device นี้
+        device_mappings = [m for m in mapping_config if m.get("device") == device_name]
+        
+        if not device_mappings:
+            print(f"[read_device_data] No mapping found for {device_name}")
+            return {}
+        
+        # หา device config
         devices = current_config.get("connection", {}).get("devices", [])
-        # หา device ที่มี name หรือ deviceType ตรงกับ device_name
-        device = next((d for d in devices if d.get("name") == device_name or d.get("deviceType", "").replace(" ", "") == device_name), None)
+        device = next((d for d in devices if d.get("name") == device_name), None)
         slave_id = device.get("slaveId", 1) if device else 1
-
-        if not client:
-            print(f"[get_gas_data] No client for {device_name}, skipping {m['name']}")
-            data[m["name"]] = 0  # กลับมาใช้ 0 แทน None
-            continue
-
-        try:
-            # Check if address is valid
-            if m.get("address") is None:
-                print(f"[get_gas_data] {m['name']} has no address, set 0")
+        
+        for m in device_mappings:
+            try:
+                # ตรวจสอบ address
+                if m.get("address") is None:
+                    print(f"[read_device_data] {m['name']} has no address, set 0")
+                    data[m["name"]] = 0
+                    continue
+                
+                # ตั้งค่าการอ่านข้อมูล
+                data_type = m.get("dataType", "int16")
+                data_format = m.get("dataFormat", "Signed")
+                byte_order = m.get("byteOrder", "Signed")
+                register_count = m.get("registerCount", 1)
+                address_base = m.get("addressBase", 0)
+                register_address = m["address"] - address_base
+                
+                # อ่านข้อมูลจาก Modbus
+                res = await client.read_holding_registers(
+                    address=register_address, count=register_count, slave=slave_id
+                )
+                
+                if not res.isError():
+                    # แปลงข้อมูล
+                    raw_val = convert_modbus_data(res.registers, data_type, byte_order)
+                    data[m["name"]] = apply_formula(m["formula"], raw_val)
+                else:
+                    data[m["name"]] = 0
+                    
+            except Exception as e:
+                print(f"[read_device_data] Error reading {m['name']}: {e}")
                 data[m["name"]] = 0
+        
+        # คำนวณ Flowrate อัตโนมัติ
+        if "Velocity" in data:
+            area = current_config.get("stack_info", {}).get("area", 1.0)
+            velocity = data["Velocity"]
+            
+            # จำกัดค่าที่สมเหตุสมผล
+            if velocity > 50:
+                velocity = min(velocity, 50)
+            if area > 100:
+                area = min(area, 100)
+            
+            try:
+                data["Flowrate"] = round(velocity * area * 3600, 2)
+            except:
+                data["Flowrate"] = 0
+        
+        # ตรวจสอบ Alarm
+        threshold = current_config.get("connection", {}).get("alarm_threshold", {})
+        alarm_values[0] = 1 if data.get("SO2", 0) > threshold.get("SO2", 200) else 0
+        alarm_values[1] = 1 if data.get("CO", 0) > threshold.get("CO", 100) else 0
+        alarm_values[2] = 1 if data.get("Dust", 0) > threshold.get("Dust", 50) else 0
+        alarm_values[3] = 1 if any(alarm_values[:3]) else 0
+        
+        return data
+        
+    except Exception as e:
+        print(f"[read_device_data] Error: {e}")
+        return {}
+
+async def auto_scan_modbus_devices():
+    """สแกนหาอุปกรณ์ Modbus ในเครือข่าย"""
+    try:
+        # สแกน IP range ที่เป็นไปได้
+        base_ips = ["192.168.1", "192.168.0", "10.0.0", "172.16.0"]
+        common_ports = [502, 1502, 503, 504]
+        found_devices = []
+        
+        for base_ip in base_ips:
+            for i in range(1, 255):  # สแกน 1-254
+                ip = f"{base_ip}.{i}"
+                for port in common_ports:
+                    try:
+                        # ทดสอบการเชื่อมต่อ
+                        client = AsyncModbusTcpClient(ip, port, timeout=1)
+                        await client.connect()
+                        
+                        if client.connected:
+                            # ทดสอบอ่านข้อมูล
+                            try:
+                                response = await asyncio.wait_for(
+                                    client.read_holding_registers(0, 2),
+                                    timeout=1
+                                )
+                                if response and not response.isError():
+                                    found_devices.append({
+                                        "ip": ip,
+                                        "port": port,
+                                        "name": f"AutoDetected_{ip}_{port}",
+                                        "mode": "tcp",
+                                        "slaveId": 1,
+                                        "registerType": "holding"
+                                    })
+                                    print(f"[auto_scan] Found device at {ip}:{port}")
+                            except:
+                                pass
+                            
+                            await client.close()
+                            
+                    except:
+                        continue
+                        
+        return found_devices
+        
+    except Exception as e:
+        print(f"[auto_scan] Error: {e}")
+        return []
+
+async def update_config_with_scanned_devices(scanned_devices):
+    """อัปเดต config ด้วย devices ที่สแกนพบ"""
+    try:
+        async with config_lock:
+            # อัปเดต devices ใน config
+            current_config["connection"]["devices"] = scanned_devices
+            
+            # บันทึก config
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(current_config, f, indent=2, ensure_ascii=False)
+                
+            print(f"[update_config] Updated with {len(scanned_devices)} devices")
+            
+    except Exception as e:
+        print(f"[update_config] Error: {e}")
+
+async def get_gas_data() -> dict:
+    """อ่านข้อมูลก๊าซจาก Modbus devices"""
+    global modbus_last_status
+    
+    try:
+        # ตรวจสอบการตั้งค่า demo mode
+        demo_mode = current_config.get("connection", {}).get("demo_mode", False)
+        
+        if demo_mode:
+            # ใช้ข้อมูล demo (ปิดใช้งานแล้ว)
+            return None
+
+        # พยายามเชื่อมต่อ Modbus
+        devices = current_config.get("connection", {}).get("devices", [])
+        if not devices:
+            add_system_alert("No Modbus devices configured")
+            return None
+
+        gas_data = {}
+        
+        for device in devices:
+            try:
+                client = await get_modbus_client(device["name"])
+                if not client:
+                    continue
+                
+                # อ่านข้อมูลตาม mapping
+                device_data = await read_device_data(client, device["name"])
+                if device_data:
+                    gas_data.update(device_data)
+                    
+            except Exception as e:
+                add_system_alert(f"Error reading {device['name']}: {e}")
                 continue
-                
-            # Get data type, format and register count from mapping
-            data_type = m.get("dataType", "int16")
-            data_format = m.get("dataFormat", "Signed")
-            byte_order = m.get("byteOrder", "Signed")
-            register_count = m.get("registerCount", 1)
+
+        if gas_data:
+            # คำนวณค่าที่ปรับแก้
+            corrected_values = calculate_corrected_values(gas_data)
+            gas_data.update(corrected_values)
             
-            # ✅ รองรับ Protocol Addresses (Base 0) และ PLC Addresses (Base 1)
-            address_base = m.get("addressBase", 0)  # 0 = Protocol, 1 = PLC
-            register_address = m["address"] - address_base  # ลบ 1 ถ้าเป็น PLC Base 1
-            res = await client.read_holding_registers(
-                address=register_address, count=register_count, slave=slave_id
-            )
-            print(f"[get_gas_data] res for {m['name']} ({data_format}):", res)
-            if not res.isError():
-                # Debug: Print raw registers
-                print(f"[get_gas_data] {m['name']} raw registers: {res.registers}")
-                print(f"[get_gas_data] {m['name']} data_type: {data_type}, byte_order: {byte_order}")
-                
-                # Convert registers to value based on data type and byte order
-                raw_val = convert_modbus_data(res.registers, data_type, byte_order)
-                data[m["name"]] = apply_formula(m["formula"], raw_val)
-                print(f"[get_gas_data] {m['name']} raw={raw_val}, final={data[m['name']]}")
-            else:
-                print(f"[get_gas_data] {m['name']} isError, set 0")
-                data[m["name"]] = 0
-        except Exception as e:
-            print(f"[get_gas_data] Exception for {m['name']} ({device_name}):", e)
-            add_system_alert(f" get_gas_data({device_name}) error: {e}")
-            data[m["name"]] = 0
+            modbus_last_status = "connected"
+            return gas_data
+        else:
+            modbus_last_status = "error"
+            add_system_alert("No data received from Modbus devices")
+            return None
 
-    # ✅ เพิ่ม Flowrate Auto Calculate
-    if "Velocity" in data:
-        area = current_config.get("stack_info", {}).get("area", 1.0)
-        velocity = data["Velocity"]
-        
-        # ✅ ตรวจสอบค่าที่สมเหตุสมผล
-        if velocity > 50:  # ถ้า Velocity สูงเกินไป
-            print(f"[get_gas_data] ⚠️ Velocity สูงผิดปกติ: {velocity} m/s")
-            add_system_alert(f"⚠️ Velocity สูงผิดปกติ: {velocity} m/s (ควร < 50 m/s)")
-            velocity = min(velocity, 50)  # จำกัดที่ 50 m/s
-        
-        if area > 100:  # ถ้า Area ใหญ่เกินไป
-            print(f"[get_gas_data] ⚠️ Area ใหญ่ผิดปกติ: {area} m²")
-            add_system_alert(f"⚠️ Area ใหญ่ผิดปกติ: {area} m² (ควร < 100 m²)")
-            area = min(area, 100)  # จำกัดที่ 100 m²
-        
-        try:
-            data["Flowrate"] = round(velocity * area * 3600, 2)
-            print(f"[get_gas_data] Flowrate = {data['Flowrate']} m³/h (Velocity: {velocity} m/s, Area: {area} m²)")
-            
-            # ✅ ตรวจสอบ Flowrate ที่สมเหตุสมผล
-            if data["Flowrate"] > 1000000:  # ถ้า Flowrate สูงเกินไป
-                print(f"[get_gas_data] ⚠️ Flowrate สูงผิดปกติ: {data['Flowrate']} m³/h")
-                add_system_alert(f"⚠️ Flowrate สูงผิดปกติ: {data['Flowrate']} m³/h")
-                
-        except Exception as e:
-            print("[get_gas_data] Flowrate calc error:", e)
-            data["Flowrate"] = 0
-
-    # ✅ Threshold Alarm
-    threshold = current_config.get("alarm_threshold", {})
-    alarm_values[0] = 1 if data.get("SO2", 0) > threshold.get("SO2", 200) else 0
-    alarm_values[1] = 1 if data.get("CO", 0) > threshold.get("CO", 100) else 0
-    alarm_values[2] = 1 if data.get("Dust", 0) > threshold.get("Dust", 50) else 0
-    alarm_values[3] = 1 if any(alarm_values[:3]) else 0
-
-    print("[get_gas_data] return:", data)
-    return data
+    except Exception as e:
+        modbus_last_status = "error"
+        add_system_alert(f"Gas data error: {e}")
+        return None
 
 # ✅ ส่วนอื่น ๆ (Blowback, Status, Config, Logs, WebSocket) **คงเดิม**
 # (โค้ดเดิมของคุณผมจะไม่ลบ ไม่ตัดเลย แต่จะปรับ ws/status ใช้ get_modbus_client("GasAnalyzer"))
@@ -641,6 +732,9 @@ async def ws_gas(websocket: WebSocket):
                     value = gas_data.get(key, 0)  # ใช้ 0 เป็น default
                     gas_values.append(value)
                 
+                # ตรวจสอบว่ามีข้อมูลจริงหรือไม่
+                has_real_data = any(value != 0 for value in gas_values[:4])  # SO2, NOx, O2, CO
+                
                 # คำนวณ corrected values
                 corrected_values = calculate_corrected_values(gas_data)
                 
@@ -659,7 +753,8 @@ async def ws_gas(websocket: WebSocket):
                     "COCorr": corrected_values.get("COCorr"),
                     "DustCorr": corrected_values.get("DustCorr"),
                     "connection_status": modbus_status,
-                    "alerts": system_alerts
+                    "alerts": system_alerts,
+                    "has_real_data": has_real_data  # เพิ่ม flag ว่ามีข้อมูลจริงหรือไม่
                 })
             except WebSocketDisconnect:
                 print("[ws_gas] disconnected")
@@ -677,29 +772,6 @@ async def ws_gas(websocket: WebSocket):
 # ---------------------
 # ✅ Config API
 # ---------------------
-@app.post("/save-config")
-async def save_config(data: dict = Body(...)):
-    try:
-        async with config_lock:  # ✅ ป้องกัน race condition
-            # ✅ ถ้าไม่มี stack_info ให้ใส่ค่า default
-            if "stack_info" not in data:
-                data["stack_info"] = current_config.get("stack_info", {"area": 1.0, "diameter": 1.0})
-
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-
-            # ✅ โหลด config ใหม่ทันที
-            load_config()
-            
-            # ✅ Regenerate Modbus clients ใหม่
-            await regenerate_modbus_clients()
-            
-            add_system_alert("✅ Config saved successfully and clients regenerated")
-            return {"success": True, "message": "Configuration saved and clients regenerated"}
-    except Exception as e:
-        add_system_alert(f"❌ save-config error: {e}")
-        return {"error": str(e)}
-
 @app.post("/reload-config")
 async def reload_config():
     """โหลด config และ mapping ใหม่"""
@@ -717,96 +789,52 @@ async def reload_config():
         add_system_alert(f"❌ reload-config error: {e}")
         return {"error": str(e)}
 
-
-@app.get("/get-config")
-async def get_config():
-    try:
-        if not os.path.exists(CONFIG_FILE):
-            return {"error": "Config not found"}
-        with open(CONFIG_FILE, "r") as f:
-            cfg = json.load(f)
-
-        if "stack_info" not in cfg:
-            cfg["stack_info"] = {"area": 1.0, "diameter": 1.0}
-
-        return {"success": True, "connection": cfg}
-    except Exception as e:
-        add_system_alert(f" get-config error: {e}")
-        return {"error": str(e)}
-
-
-@app.post("/save-mapping")
-async def save_mapping(data: dict = Body(...)):
-    try:
-        with open(MAPPING_FILE, "w") as f:
-            json.dump(data["mapping"], f, indent=2)
-        load_mapping()
-        add_system_alert(" Mapping saved successfully and reloaded")
-        return {"success": True}
-    except Exception as e:
-        add_system_alert(f" save-mapping error: {e}")
-        return {"error": str(e)}
-
-@app.get("/get-mapping-config")
-async def get_mapping_config():
-    try:
-        if not os.path.exists(MAPPING_FILE):
-            default_mapping = [
-                {"name": "SO2", "address": 0, "unit": "ppm", "formula": "x"},
-                {"name": "NOx", "address": 1, "unit": "ppm", "formula": "x"},
-                {"name": "O2", "address": 2, "unit": "%", "formula": "x"},
-                {"name": "CO", "address": 3, "unit": "ppm", "formula": "x"},
-                {"name": "Dust", "address": 4, "unit": "mg/m³", "formula": "x"},
-                {"name": "Temperature", "address": 5, "unit": "°C", "formula": "x"},
-                {"name": "Velocity", "address": 6, "unit": "m/s", "formula": "x"},
-                {"name": "Flowrate", "address": 7, "unit": "m³/h", "formula": "x"},
-                {"name": "Pressure", "address": 8, "unit": "Pa", "formula": "x"}
-            ]
-            with open(MAPPING_FILE, "w") as f:
-                json.dump(default_mapping, f, indent=2)
-            return {"success": True, "mapping": default_mapping}
-        with open(MAPPING_FILE, "r") as f:
-            mapping_data = json.load(f)
-        return {"success": True, "mapping": mapping_data}
-    except Exception as e:
-        add_system_alert(f" get-mapping-config error: {e}")
-        return {"error": str(e)}
-
 # ---------------------
 # ✅ Logs & Health
 # ---------------------
+
 @app.get("/log-preview")
 async def log_preview():
-    data = []
-    if os.path.exists(LOG_FILE):
-        with open(LOG_FILE, newline="", encoding="utf-8") as f:
-            # ✅ อ่านข้อมูล 10 แถวล่าสุด
-            lines = f.readlines()
-            if len(lines) > 1:  # มี header และข้อมูล
-                # ✅ ใช้ header มาตรฐานสำหรับ CEMS
-                standard_headers = ["Timestamp", "SO2", "NOx", "O2", "CO", "Dust", "Temperature", "Velocity", "Flowrate", "Pressure"]
-                
-                # ✅ อ่านข้อมูล 10 แถวล่าสุด (ไม่รวม header)
-                data_lines = lines[-10:] if len(lines) <= 11 else lines[-10:]
-                
-                for i, line in enumerate(reversed(data_lines), start=1):
-                    values = line.strip().split(',')
-                    if len(values) >= 10:  # มีข้อมูลครบ
-                        row = {
-                            "key": i,
-                            "Timestamp": values[0],
-                            "SO2": float(values[1]) if values[1] and values[1] != '' else 0,
-                            "NOx": float(values[2]) if values[2] and values[2] != '' else 0,
-                            "O2": float(values[3]) if values[3] and values[3] != '' else 0,
-                            "CO": float(values[4]) if values[4] and values[4] != '' else 0,
-                            "Dust": float(values[5]) if values[5] and values[5] != '' else 0,
-                            "Temperature": float(values[6]) if values[6] and values[6] != '' else 0,
-                            "Velocity": float(values[7]) if values[7] and values[7] != '' else 0,
-                            "Flowrate": float(values[8]) if values[8] and values[8] != '' else 0,
-                            "Pressure": float(values[9]) if values[9] and values[9] != '' else 0,
-                        }
-                        data.append(row)
-    return data
+    try:
+        # ตรวจสอบไฟล์ CSV
+        if not os.path.exists(LOG_FILE):
+            return {"error": "Log file not found"}
+        
+        # อ่านข้อมูลจาก CSV
+        data = []
+        with open(LOG_FILE, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                data.append(row)
+        
+        # เอา 10 records ล่าสุด
+        latest_data = data[-10:] if len(data) > 10 else data
+        
+        # Transform data for frontend
+        transformed_data = []
+        for i, row in enumerate(latest_data, 1):
+            transformed_data.append({
+                "key": i,
+                "Timestamp": row.get('Timestamp', ''),
+                "SO2": float(row.get('SO2', 0)) if row.get('SO2') else 0,
+                "NOx": float(row.get('NOx', 0)) if row.get('NOx') else 0,
+                "O2": float(row.get('O2', 0)) if row.get('O2') else 0,
+                "CO": float(row.get('CO', 0)) if row.get('CO') else 0,
+                "Dust": float(row.get('Dust', 0)) if row.get('Dust') else 0,
+                "Temperature": float(row.get('Temperature', 0)) if row.get('Temperature') else 0,
+                "Velocity": float(row.get('Velocity', 0)) if row.get('Velocity') else 0,
+                "Flowrate": float(row.get('Flowrate', 0)) if row.get('Flowrate') else 0,
+                "Pressure": float(row.get('Pressure', 0)) if row.get('Pressure') else 0,
+                # เพิ่ม corrected values
+                "SO2_corrected": float(row.get('SO2_Corrected', 0)) if row.get('SO2_Corrected') else 0,
+                "NOx_corrected": float(row.get('NOx_Corrected', 0)) if row.get('NOx_Corrected') else 0,
+                "CO_corrected": float(row.get('CO_Corrected', 0)) if row.get('CO_Corrected') else 0,
+                "Dust_corrected": float(row.get('Dust_Corrected', 0)) if row.get('Dust_Corrected') else 0,
+            })
+        
+        return transformed_data
+    except Exception as e:
+        return {"error": f"Error fetching data: {str(e)}"}
 
 @app.get("/download-logs")
 async def download_logs():
@@ -858,7 +886,7 @@ async def get_config_endpoint():
             content={"error": f"Error reading config: {str(e)}"}
         )
 
-# ✅ บันทึกค่าการตั้งค่า (ใหม่)
+# ✅ บันทึกค่าการตั้งค่า (รวมกับ save_config)
 @app.put("/config")
 async def update_config_endpoint(request: Request):
     try:
@@ -885,7 +913,7 @@ async def update_config_endpoint(request: Request):
             content={"error": f"Error updating config: {str(e)}"}
         )
 
-# ✅ ดึงค่า mapping configuration (ใหม่)
+# ✅ ดึงค่า mapping configuration (รวมกับ get_mapping_config)
 @app.get("/mapping")
 async def get_mapping_endpoint():
     try:
@@ -918,7 +946,7 @@ async def get_mapping_endpoint():
             content={"error": f"Error reading mapping: {str(e)}"}
         )
 
-# ✅ บันทึกค่า mapping configuration (ใหม่)
+# ✅ บันทึกค่า mapping configuration (รวมกับ save_mapping)
 @app.put("/mapping")
 async def update_mapping_endpoint(request: Request):
     try:
@@ -1029,24 +1057,44 @@ async def get_demo_data_endpoint():
     import random
     from datetime import datetime, timedelta
     
+    # ตรวจสอบการตั้งค่า demo mode
+    demo_realistic = current_config.get("connection", {}).get("demo_data_realistic", True)
+    
     # สร้างข้อมูลตัวอย่าง
     base_time = datetime.now()
     data_points = []
     
     for i in range(10):
         timestamp = base_time - timedelta(minutes=i*5)
-        data_points.append({
-            "timestamp": timestamp.isoformat(),
-            "SO2": round(random.uniform(50, 200), 2),
-            "NOx": round(random.uniform(100, 500), 2),
-            "O2": round(random.uniform(5, 10), 2),
-            "CO": round(random.uniform(50, 300), 2),
-            "Dust": round(random.uniform(10, 30), 2),
-            "Temperature": round(random.uniform(100, 150), 2),
-            "Velocity": round(random.uniform(15, 25), 2),
-            "Flowrate": round(random.uniform(400000, 600000), 2),
-            "Pressure": round(random.uniform(200, 300), 2)
-        })
+        
+        if demo_realistic:
+            # ข้อมูลที่สมจริงมากขึ้น
+            data_points.append({
+                "timestamp": timestamp.isoformat(),
+                "SO2": round(random.uniform(20, 80), 2),
+                "NOx": round(random.uniform(40, 120), 2),
+                "O2": round(random.uniform(8, 12), 2),
+                "CO": round(random.uniform(30, 80), 2),
+                "Dust": round(random.uniform(5, 15), 2),
+                "Temperature": round(random.uniform(120, 180), 2),
+                "Velocity": round(random.uniform(18, 22), 2),
+                "Flowrate": round(random.uniform(450000, 550000), 2),
+                "Pressure": round(random.uniform(250, 280), 2)
+            })
+        else:
+            # ข้อมูลเดิม
+            data_points.append({
+                "timestamp": timestamp.isoformat(),
+                "SO2": round(random.uniform(50, 200), 2),
+                "NOx": round(random.uniform(100, 500), 2),
+                "O2": round(random.uniform(5, 10), 2),
+                "CO": round(random.uniform(50, 300), 2),
+                "Dust": round(random.uniform(10, 30), 2),
+                "Temperature": round(random.uniform(100, 150), 2),
+                "Velocity": round(random.uniform(15, 25), 2),
+                "Flowrate": round(random.uniform(400000, 600000), 2),
+                "Pressure": round(random.uniform(200, 300), 2)
+            })
     
     return {
         "data": data_points,
@@ -1060,7 +1108,11 @@ async def logging_task():
             gas_data = await get_gas_data()
             if gas_data:
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                # บันทึกลง CSV (เดิม)
                 write_log_to_csv(now, gas_data)
+                print(f"✅ บันทึกข้อมูลลง CSV: {now}")
+                    
         except Exception as e:
             add_system_alert(f" Logging error: {e}")
         await asyncio.sleep(LOG_INTERVAL)

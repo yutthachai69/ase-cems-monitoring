@@ -1,0 +1,107 @@
+// WebSocket Manager - จัดการ WebSocket connections ร่วมกัน
+class WebSocketManager {
+  constructor() {
+    this.connections = new Map();
+    this.reconnectTimers = new Map();
+    this.backendUrl = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
+  }
+
+  // เชื่อมต่อ WebSocket
+  connect(endpoint, onMessage, onError, onClose) {
+    const wsUrl = `${this.backendUrl.replace(/^http/, "ws")}${endpoint}`;
+    
+    // ปิด connection เดิมถ้ามี
+    if (this.connections.has(endpoint)) {
+      this.connections.get(endpoint).close();
+    }
+
+    const ws = new WebSocket(wsUrl);
+    this.connections.set(endpoint, ws);
+
+    ws.onopen = () => {
+      console.debug(`✅ WebSocket Connected: ${endpoint}`);
+      // ล้าง reconnect timer
+      if (this.reconnectTimers.has(endpoint)) {
+        clearTimeout(this.reconnectTimers.get(endpoint));
+        this.reconnectTimers.delete(endpoint);
+      }
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onMessage && onMessage(data);
+      } catch (error) {
+        console.error(`WebSocket message parse error: ${error}`);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.warn(`⚠ WebSocket Error (${endpoint}):`, error);
+      onError && onError(error);
+    };
+
+    ws.onclose = () => {
+      console.debug(`🔌 WebSocket Closed: ${endpoint}`);
+      this.connections.delete(endpoint);
+      
+      // Auto reconnect
+      const reconnectTimer = setTimeout(() => {
+        console.debug(`🔄 Reconnecting to ${endpoint}...`);
+        this.connect(endpoint, onMessage, onError, onClose);
+      }, 5000);
+      
+      this.reconnectTimers.set(endpoint, reconnectTimer);
+      onClose && onClose();
+    };
+
+    return ws;
+  }
+
+  // ปิด WebSocket
+  disconnect(endpoint) {
+    if (this.connections.has(endpoint)) {
+      this.connections.get(endpoint).close();
+      this.connections.delete(endpoint);
+    }
+    
+    if (this.reconnectTimers.has(endpoint)) {
+      clearTimeout(this.reconnectTimers.get(endpoint));
+      this.reconnectTimers.delete(endpoint);
+    }
+  }
+
+  // ปิดทั้งหมด
+  disconnectAll() {
+    this.connections.forEach((ws, endpoint) => {
+      ws.close();
+    });
+    this.connections.clear();
+    
+    this.reconnectTimers.forEach((timer) => {
+      clearTimeout(timer);
+    });
+    this.reconnectTimers.clear();
+  }
+
+  // ตรวจสอบสถานะการเชื่อมต่อ
+  isConnected(endpoint) {
+    const ws = this.connections.get(endpoint);
+    return ws && ws.readyState === WebSocket.OPEN;
+  }
+
+  // ส่งข้อความ
+  send(endpoint, message) {
+    const ws = this.connections.get(endpoint);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(message));
+      return true;
+    }
+    return false;
+  }
+}
+
+// สร้าง instance เดียว
+const wsManager = new WebSocketManager();
+
+export default wsManager;

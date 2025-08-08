@@ -45,7 +45,7 @@
     "formula": "x"
   },
   {
-    "device": "DustSensor",
+    "device": "test",
     "name": "Dust",
     "address": 0,
     "dataType": "float32",
@@ -56,7 +56,7 @@
     "formula": "x"
   },
   {
-    "device": "FlowSensor",
+    "device": "test2",
     "name": "Temperature",
     "address": 0,
     "dataType": "float32",
@@ -67,7 +67,7 @@
     "formula": "x"
   },
   {
-    "device": "FlowSensor",
+    "device": "test2",
     "name": "Velocity",
     "address": 2,
     "dataType": "float32",
@@ -78,7 +78,7 @@
     "formula": "x"
   },
   {
-    "device": "FlowSensor",
+    "device": "test2",
     "name": "Pressure",
     "address": 4,
     "dataType": "float32",

@@ -5,12 +5,12 @@
         "name": "GasAnalyzer",
         "mode": "tcp",
         "ip": "127.0.0.1",
-        "port": 1502,
+        "port": 502,
         "slaveId": 1,
         "registerType": "holding"
       },
       {
-        "name": "DustSensor",
+        "name": "test",
         "mode": "tcp",
         "slaveId": 1,
         "registerType": "holding",
@@ -18,7 +18,7 @@
         "port": 503
       },
       {
-        "name": "FlowSensor",
+        "name": "test2",
         "mode": "tcp",
         "slaveId": 1,
         "registerType": "holding",
@@ -32,7 +32,9 @@
       "Dust": 50
     },
     "log_interval": 60,
-    "reconnect_interval": 60
+    "reconnect_interval": 60,
+    "demo_mode": false,
+    "auto_scan_network": false
   },
   "stack_info": {
     "area": 49.736,
