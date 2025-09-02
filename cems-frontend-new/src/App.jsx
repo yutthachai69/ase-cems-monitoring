@@ -1,11 +1,12 @@
 import { Routes, Route } from "react-router-dom";
-import SidebarLayout from "../src/components/SidebarLayout";
-import Home from "../src/pages/Home";
-import Status from "../src/pages/Status";
-import DataLogs from "../src/pages/DataLogs";
-import Blowback from "../src/pages/Blowback";
-import WebPortal from "../src/pages/WebPortal";
-import Config from "../src/pages/Config";
+import SidebarLayout from "./components/SidebarLayout";
+import Home from "./pages/Home";
+import Status from "./pages/Status";
+import DataLogs from "./pages/DataLogs";
+import Graph from "./pages/Graph";
+import Blowback from "./pages/Blowback";
+import WebPortal from "./pages/WebPortal";
+import Config from "./pages/Config";
 
 function App() {
   return (
@@ -14,8 +15,9 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/status" element={<Status />} />
         <Route path="/logs" element={<DataLogs />} />
+        <Route path="/graph" element={<Graph />} />
         <Route path="/blowback" element={<Blowback />} />
-        <Route path="/portal" element={<WebPortal />} />
+        <Route path="/webportal" element={<WebPortal />} />
         <Route path="/config" element={<Config />} />
       </Route>
     </Routes>

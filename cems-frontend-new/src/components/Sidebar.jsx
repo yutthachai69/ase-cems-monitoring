@@ -8,6 +8,8 @@ import {
   SyncOutlined,
   GlobalOutlined,
   SettingOutlined,
+  ExperimentOutlined,
+  LineChartOutlined,
 } from "@ant-design/icons";
 
 // ✅ นำไฟล์ไปไว้ที่ src/assets/
@@ -25,7 +27,10 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
   useEffect(() => {
     const updateClock = () => {
       const now = new Date();
-      setDate(now.toLocaleDateString("th-TH"));
+      // แปลงเป็นปี พ.ศ.
+      const thaiYear = now.getFullYear() + 543;
+      const thaiDate = `${now.getDate()}/${now.getMonth() + 1}/${thaiYear}`;
+      setDate(thaiDate);
       setTime(now.toLocaleTimeString("th-TH", { hour12: false }));
     };
     updateClock();
@@ -51,6 +56,7 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
     { key: "/", icon: <HomeOutlined />, label: <Link to="/">HOME</Link> },
     { key: "/status", icon: <DashboardOutlined />, label: <Link to="/status">STATUS</Link> },
     { key: "/logs", icon: <FileTextOutlined />, label: <Link to="/logs">DATA LOGS</Link> },
+    { key: "/graph", icon: <LineChartOutlined />, label: <Link to="/graph">GRAPH</Link> },
     { 
       key: "/blowback", 
       icon: (
@@ -110,7 +116,7 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
           )}
         </div>
 
-        {/* 📋 MENU + Portal */}
+        {/* 📋 MENU */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
           <Menu
             theme="dark"
@@ -119,7 +125,23 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
             items={menuItems}
             style={{ flexGrow: 1 }}
           />
-          <div style={{ padding: 16, textAlign: "center" }}>
+        </div>
+
+        {/* 🔽 Bottom ASE Logo + Web Portal */}
+        <div
+          style={{
+            textAlign: "center",
+            padding: collapsed ? "12px 0" : "12px 16px",
+            marginTop: "auto",
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            background: "#001529",
+          }}
+        >
+          {/* Web Portal Button */}
+          <div style={{ marginBottom: 16 }}>
             <Link to="/portal">
               <button
                 style={{
@@ -151,21 +173,7 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
               </button>
             </Link>
           </div>
-        </div>
-
-        {/* 🔽 Bottom ASE Logo */}
-        <div
-          style={{
-            textAlign: "center",
-            padding: collapsed ? "12px 0" : "12px 16px",
-            marginTop: "auto",
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            background: "#001529",
-          }}
-        >
+          
           <img
             src={AseSmallLogo}
             alt="ASE Logo"

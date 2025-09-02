@@ -1,54 +1,82 @@
-import { useEffect, useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 
 export default function SystemAlertBar() {
   const [status, setStatus] = useState(null); // "server_error" | "modbus_error" | "connected"
-  const wsRef = useRef(null);
-  const reconnectTimer = useRef(null);
+  const [showSuccess, setShowSuccess] = useState(true);
+  const successTimer = useRef(null);
+  const lastStatusRef = useRef(null);
 
-  const connectWebSocket = () => {
-    // ✅ ใช้ backend URL ที่ถูกต้องสำหรับ standalone app
-    const backendUrl = window.isElectron ? "http://127.0.0.1:8000" : (import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000");
-    const wsUrl = `${backendUrl.replace(/^http/, "ws")}/ws/status`;
+  useEffect(() => {
+    // ฟังก์ชันตรวจสอบสถานะจาก window object
+    const checkStatus = () => {
+      try {
+        // ตรวจสอบจาก window object ที่ Home page ส่งมา
+        if (window.cemsStatus) {
+          const { connection_status, has_real_data } = window.cemsStatus;
+          
+          let newStatus = "modbus_error";
+          
+          if (connection_status === "connected" || has_real_data === true) {
+            newStatus = "connected";
+          } else if (connection_status === "error") {
+            newStatus = "modbus_error";
+          }
 
-    if (wsRef.current) wsRef.current.close();
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+          // ป้องกันการเปลี่ยนสถานะถี่เกินไป
+          if (lastStatusRef.current !== newStatus) {
+            lastStatusRef.current = newStatus;
+            setStatus(newStatus);
 
-    ws.onopen = () => {
-      console.debug("✅ SystemAlertBar Connected to Server");
-    };
+            if (newStatus === "connected") {
+              setShowSuccess(true);
 
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
+              // ลบ timer เก่า (ถ้ามี)
+              if (successTimer.current) {
+                clearTimeout(successTimer.current);
+              }
 
-      if (msg.connection_status === "connected") {
-        setStatus("connected"); // ✅ Modbus เชื่อมได้
-      } else if (msg.connection_status === "error") {
-        setStatus("modbus_error"); // ⚠ Server ติด แต่ Modbus เชื่อมไม่ได้
+              // ตั้ง timer ให้ซ่อนข้อความสำเร็จหลังจาก 10 วินาที
+              successTimer.current = setTimeout(() => {
+                setShowSuccess(false);
+              }, 10000);
+            } else {
+              setShowSuccess(false);
+            }
+          }
+        } else {
+          // ถ้ายังไม่มีข้อมูล ให้แสดง server_error
+          if (lastStatusRef.current !== "server_error") {
+            lastStatusRef.current = "server_error";
+            setStatus("server_error");
+            setShowSuccess(false);
+          }
+        }
+      } catch (error) {
+        console.warn("❌ SystemAlertBar Error:", error);
       }
     };
 
-    ws.onerror = () => {
-      console.warn("❌ SystemAlertBar Server Error");
-      setStatus("server_error");
-    };
+    // ตรวจสอบทุก 1 วินาที
+    const interval = setInterval(checkStatus, 1000);
+    
+    // ตรวจสอบครั้งแรกทันที
+    checkStatus();
 
-    ws.onclose = () => {
-      console.warn("🔌 SystemAlertBar Closed - Retry in 5s");
-      setStatus("server_error");
-      reconnectTimer.current = setTimeout(connectWebSocket, 5000);
-    };
-  };
-
-  useEffect(() => {
-    connectWebSocket();
     return () => {
-      wsRef.current?.close();
-      clearTimeout(reconnectTimer.current);
+      clearInterval(interval);
+      if (successTimer.current) {
+        clearTimeout(successTimer.current);
+      }
     };
   }, []);
 
-  if (status === "connected") {
+  // ✅ ไม่แสดงอะไรถ้า status ยังเป็น null (กำลังโหลด)
+  if (status === null) {
+    return null;
+  }
+
+  // แสดงข้อความสำเร็จเมื่อเชื่อมต่อได้และยังไม่หมดเวลา
+  if (status === "connected" && showSuccess) {
     return (
       <div
         role="status"
@@ -65,6 +93,11 @@ export default function SystemAlertBar() {
         ✅ เชื่อมต่อกับ Modbus สำเร็จ
       </div>
     );
+  }
+
+  // เมื่อเชื่อมต่อได้แล้วแต่หมดเวลาแสดงข้อความสำเร็จแล้ว - ไม่แสดงอะไร
+  if (status === "connected" && !showSuccess) {
+    return null;
   }
 
   if (status === "modbus_error") {

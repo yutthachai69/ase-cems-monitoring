@@ -2,7 +2,7 @@
   "connection": {
     "devices": [
       {
-        "name": "GasAnalyzer",
+        "name": "test",
         "mode": "tcp",
         "ip": "127.0.0.1",
         "port": 502,
@@ -10,7 +10,7 @@
         "registerType": "holding"
       },
       {
-        "name": "test",
+        "name": "test2",
         "mode": "tcp",
         "slaveId": 1,
         "registerType": "holding",
@@ -18,26 +18,94 @@
         "port": 503
       },
       {
-        "name": "test2",
+        "name": "test3",
         "mode": "tcp",
-        "slaveId": 1,
-        "registerType": "holding",
         "ip": "127.0.0.1",
-        "port": 504
+        "port": 504,
+        "slaveId": 1,
+        "registerType": "holding"
       }
     ],
-    "alarm_threshold": {
-      "SO2": 200,
-      "CO": 100,
-      "Dust": 50
+    "parameter_threshold": {
+      "Temperature": 80,
+      "Pressure": 1000,
+      "Velocity": 30
     },
     "log_interval": 60,
-    "reconnect_interval": 60,
-    "demo_mode": false,
-    "auto_scan_network": false
+    "reconnect_interval": 1,
+    "default_ports": [
+      502,
+      503,
+      504,
+      1502,
+      2404,
+      8502,
+      10502
+    ]
   },
   "stack_info": {
-    "area": 49.736,
-    "diameter": 7.958
+    "area": 40,
+    "diameter": 7.136
+  },
+  "gas_config": {
+    "default_gases": [
+      {
+        "name": "SO2",
+        "display_name": "SO2",
+        "unit": "ppm",
+        "enabled": true,
+        "alarm_threshold": 200,
+        "min_value": 0,
+        "max_value": 300,
+        "color": "#ff6b6b"
+      },
+      {
+        "name": "NOx",
+        "display_name": "NOx",
+        "unit": "ppm",
+        "enabled": true,
+        "alarm_threshold": 100,
+        "min_value": 0,
+        "max_value": 300,
+        "color": "#4ecdc4"
+      },
+      {
+        "name": "O2",
+        "display_name": "O2",
+        "unit": "%",
+        "enabled": true,
+        "alarm_threshold": 25,
+        "min_value": 0,
+        "max_value": 25,
+        "color": "#45b7d1"
+      },
+      {
+        "name": "CO",
+        "display_name": "CO",
+        "unit": "ppm",
+        "enabled": true,
+        "alarm_threshold": 100,
+        "min_value": 0,
+        "max_value": 300,
+        "color": "#96ceb4"
+      },
+      {
+        "name": "Dust",
+        "display_name": "Dust",
+        "unit": "mg/m³",
+        "enabled": true,
+        "alarm_threshold": 50,
+        "min_value": 0,
+        "max_value": 100,
+        "color": "#feca57"
+      }
+    ],
+    "additional_gases": []
+  },
+  "influxdb": {
+    "url": "http://localhost:8086",
+    "token": "cems-admin-token-123456",
+    "org": "CEMS",
+    "bucket": "cems_data"
   }
 }

@@ -12,7 +12,7 @@ import {
   message,
 } from "antd";
 import { ReloadOutlined, InfoCircleOutlined } from "@ant-design/icons";
-import SystemAlertBar from "../components/SystemAlertBar"; // ✅ เพิ่มการ import
+import SystemAlertBar from "../components/SystemAlertBar";
 
 const { Title, Text } = Typography;
 
@@ -31,36 +31,105 @@ const StatusDot = ({ isOn, color }) => (
 );
 
 export default function Status() {
-  const [alarmValues, setAlarmValues] = useState([false, false, false, false]);
-  const [statusValues, setStatusValues] = useState(Array(15).fill(false));
+  const [alarmValues, setAlarmValues] = useState([]);
+  const [statusValues, setStatusValues] = useState([]);
   const [loading, setLoading] = useState(false);
   const [connectionError, setConnectionError] = useState(false);
-  const socketRef = useRef(null);
-  const reconnectRef = useRef(null);
 
-  const alarmItems = [
-    "Temperature Controller Alarm",
-    "Analyzer Malfunction",
-    "Sample Probe Alarm",
-    "Alarm Light",
-  ];
-  const statusItems = [
-    "Maintenance Mode",
-    "Calibration Through Probe",
-    "Manual Blowback Button",
-    "Analyzer Calibration",
-    "Analyzer Holding Zero",
-    "Analyzer Zero Indicator",
-    "Sampling SOV",
-    "Sampling Pump",
-    "Direct Calibration SOV",
-    "Blowback SOV",
-    "Calibration Through Probe SOV",
-    "Calibration Through Probe Light",
-    "Blowback Light",
-    "Blowback in Operation",
-    "Hold Current Value",
-  ];
+
+
+  // ใช้ static data แทนการเชื่อมต่อ PLC/Modbus โดยตรง
+  const [mappingData] = useState([]);
+
+  // รายการ Status และ Alarm ที่แสดงบนหน้า Status (เหมือนเต้าเสียบ)
+  const getStatusAlarmItems = () => {
+    const statusItems = [];
+    const alarmItems = [];
+
+    // รายการเริ่มต้น (เหมือนเต้าเสียบที่ว่าง)
+    const defaultStatusItems = [
+      "Maintenance Mode",
+      "Calibration Through Probe",
+      "Manual Blowback Button",
+      "Analyzer Calibration",
+      "Analyzer Holding Zero",
+      "Analyzer Zero Indicator",
+      "Sampling SOV",
+      "Sampling Pump",
+      "Direct Calibration SOV",
+      "Blowback SOV",
+      "Calibration Through Probe SOV",
+      "Calibration Through Probe Light",
+      "Blowback Light",
+      "Blowback in Operation",
+      "Hold Current Value",
+    ];
+    
+    const defaultAlarmItems = [
+      "Temperature Controller Alarm",
+      "Analyzer Malfunction",
+      "Sample Probe Alarm",
+      "Alarm Light",
+    ];
+
+    // ตรวจสอบ mapping data เพื่อดูว่าเต้าไหนถูกเสียบแล้ว
+    mappingData.forEach(mapping => {
+      const name = mapping.name;
+      const description = mapping.description || name;
+      
+      // ตรวจสอบว่าเป็น Status หรือ Alarm
+      if (name.toLowerCase().includes("alarm") || description.toLowerCase().includes("alarm") || 
+          name.toLowerCase().includes("error") || description.toLowerCase().includes("error") ||
+          name.toLowerCase().includes("malfunction") || description.toLowerCase().includes("malfunction")) {
+        // เป็น Alarm
+        if (!alarmItems.includes(name)) {
+          alarmItems.push(name);
+        }
+      } else if (name.toLowerCase().includes("maintenance") || description.toLowerCase().includes("maintenance") ||
+                 name.toLowerCase().includes("calibration") || description.toLowerCase().includes("calibration") ||
+                 name.toLowerCase().includes("sampling") || description.toLowerCase().includes("sampling") ||
+                 name.toLowerCase().includes("blowback") || description.toLowerCase().includes("blowback") ||
+                 name.toLowerCase().includes("pump") || description.toLowerCase().includes("pump") ||
+                 name.toLowerCase().includes("sov") || description.toLowerCase().includes("sov") ||
+                 name.toLowerCase().includes("light") || description.toLowerCase().includes("light") ||
+                 name.toLowerCase().includes("operation") || description.toLowerCase().includes("operation") ||
+                 name.toLowerCase().includes("hold") || description.toLowerCase().includes("hold") ||
+                 name.toLowerCase().includes("indicator") || description.toLowerCase().includes("indicator") ||
+                 name.toLowerCase().includes("controller") || description.toLowerCase().includes("controller") ||
+                 name.toLowerCase().includes("probe") || description.toLowerCase().includes("probe")) {
+        // เป็น Status
+        if (!statusItems.includes(name)) {
+          statusItems.push(name);
+        }
+      }
+    });
+
+    // เพิ่มรายการเริ่มต้นที่ยังไม่ถูกเสียบ
+    defaultStatusItems.forEach(item => {
+      if (!statusItems.includes(item)) {
+        statusItems.push(item);
+      }
+    });
+
+    defaultAlarmItems.forEach(item => {
+      if (!alarmItems.includes(item)) {
+        alarmItems.push(item);
+      }
+    });
+
+    console.log("Status items (with mapping):", statusItems);
+    console.log("Alarm items (with mapping):", alarmItems);
+
+    return { statusItems, alarmItems };
+  };
+
+  const { statusItems, alarmItems } = getStatusAlarmItems();
+
+  // อัปเดตค่าเริ่มต้นเมื่อ statusItems และ alarmItems เปลี่ยน
+  useEffect(() => {
+    setStatusValues(Array(statusItems.length).fill(false));
+    setAlarmValues(Array(alarmItems.length).fill(false));
+  }, [statusItems.length, alarmItems.length]);
 
   const notifyNewAlarms = (newValues) => {
     const prev = JSON.parse(localStorage.getItem("cems_alarmValues_prev") || "[]");
@@ -72,63 +141,24 @@ export default function Status() {
     localStorage.setItem("cems_alarmValues_prev", JSON.stringify(newValues));
   };
 
-  const connectWebSocket = () => {
+  // ใช้ static data แทนการเชื่อมต่อ WebSocket
+  const loadStaticData = () => {
+    // สร้าง mock data สำหรับทดสอบ
+    const mockStatusValues = Array(statusItems.length).fill(false);
+    const mockAlarmValues = Array(alarmItems.length).fill(false);
+    
+    // ตั้งค่าบางตัวเป็น ON เพื่อทดสอบ
+    mockStatusValues[0] = true;  // Maintenance Mode
+    mockStatusValues[2] = true;  // Manual Blowback Button
+    mockAlarmValues[0] = true;   // Temperature Controller Alarm
+    
+    setStatusValues(mockStatusValues);
+    setAlarmValues(mockAlarmValues);
     setConnectionError(false);
-    let gotData = false;
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
-    const wsUrl = `${backendUrl.replace(/^http/, "ws")}/ws/status`;
-
-    if (socketRef.current && socketRef.current.readyState <= 1) {
-      console.debug("🟡 WebSocket already connecting or open");
-      return;
-    }
-
-    const ws = new WebSocket(wsUrl);
-    socketRef.current = ws;
-
-    ws.onopen = () => console.debug("✅ WebSocket for Status opened");
-
-    ws.onmessage = (event) => {
-      gotData = true;
-      setConnectionError(false);
-      const msg = JSON.parse(event.data);
-
-      if (msg.type === "status" && Array.isArray(msg.values)) {
-        const values = msg.values.map((v) => v === 1);
-        const alarms = values.slice(15, 19);
-        setStatusValues(values.slice(0, 15));
-        setAlarmValues(alarms);
-        notifyNewAlarms(alarms);
-      }
-    };
-
-    ws.onerror = () => {
-      setConnectionError(true);
-      console.warn("⚠ WebSocket error");
-    };
-
-    ws.onclose = () => {
-      setTimeout(() => {
-        if (!gotData) {
-          setConnectionError(true);
-          localStorage.removeItem("cems_alarmValues");
-        }
-      }, 2000);
-      console.debug("🔌 WebSocket closed, reconnecting...");
-      reconnectRef.current = setTimeout(connectWebSocket, 3000);
-    };
   };
 
   useEffect(() => {
-    connectWebSocket();
-    return () => {
-      clearTimeout(reconnectRef.current);
-      try {
-        socketRef.current?.close();
-      } catch (err) {
-        console.warn("⚠ WebSocket close cleanup failed:", err);
-      }
-    };
+    loadStaticData();
   }, []);
 
   useEffect(() => {
@@ -139,15 +169,7 @@ export default function Status() {
 
   const handleRefresh = () => {
     setLoading(true);
-    if (socketRef.current) {
-      try {
-        socketRef.current.close();
-      } catch (err) {
-        console.warn("⚠ Error closing WebSocket:", err);
-      }
-    } else {
-      connectWebSocket();
-    }
+    loadStaticData();
     setTimeout(() => setLoading(false), 1000);
   };
 
@@ -161,7 +183,7 @@ export default function Status() {
       </Title>
       <Row gutter={[16, 12]}>
         {items.map((item, idx) => {
-          const isOn = values[idx];
+          const isOn = values[idx] || false;
           return (
             <Col xs={24} sm={24} md={12} lg={8} key={idx} style={{ minWidth: 0 }}>
               <Card
@@ -271,9 +293,9 @@ export default function Status() {
             </div>
           ) : (
             <>
-              {renderSection("Alarm", alarmItems, alarmValues, "#ff4d4f")}
-              <Divider style={{ margin: "32px 0 24px" }} />
-              {renderSection("Status", statusItems, statusValues, "#1890ff")}
+              {alarmItems.length > 0 && renderSection("Alarm", alarmItems, alarmValues, "#ff4d4f")}
+              {alarmItems.length > 0 && statusItems.length > 0 && <Divider style={{ margin: "32px 0 24px" }} />}
+              {statusItems.length > 0 && renderSection("Status", statusItems, statusValues, "#1890ff")}
             </>
           )}
         </div>

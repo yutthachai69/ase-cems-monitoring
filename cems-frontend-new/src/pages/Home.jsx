@@ -1,5 +1,4 @@
-// 👉 นำเข้าทุกอย่างตามเดิม
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import {
   Typography, Row, Col, Card, Divider, Button, Space, Select,
   Tooltip, Spin, notification
@@ -52,6 +51,10 @@ export default function Home() {
   const [lastUpdatedHour, setLastUpdatedHour] = useState(null);
   const [isConnected, setIsConnected] = useState(false); // เพิ่ม state ตรวจสอบการเชื่อมต่อ
   const [dbData, setDbData] = useState(null); // เพิ่ม state สำหรับข้อมูลจากฐานข้อมูล
+  const [gasConfig, setGasConfig] = useState({
+    default_gases: [],
+    additional_gases: []
+  });
 
 
 
@@ -88,17 +91,51 @@ export default function Home() {
     localStorage.setItem("cems_alarmValues_prev", JSON.stringify(newValues));
   };
 
-  const stackItems = [
-    { label: "SO₂", unit: "ppm", icon: <CloudOutlined />, desc: "Sulfur Dioxide" },
-    { label: "NOx", unit: "ppm", icon: <FireOutlined />, desc: "Nitrogen Oxides" },
-    { label: "O₂", unit: "%", icon: <DashboardOutlined />, desc: "Oxygen" },
-    { label: "CO", unit: "ppm", icon: <CloudOutlined />, desc: "Carbon Monoxide" },
-    { label: "Dust", unit: "mg/m³", icon: <ExperimentOutlined />, desc: "Particulate Matter" },
-    { label: "Temperature", unit: "°C", icon: <FireOutlined />, desc: "Temperature" },
-    { label: "Velocity", unit: "m/s", icon: <RocketOutlined />, desc: "Gas Velocity" },
-    { label: "Flowrate", unit: "m³/h", icon: <ThunderboltOutlined />, desc: "Gas Flow Rate" },
-    { label: "Pressure", unit: "Pa", icon: <DashboardOutlined />, desc: "Gas Pressure" }
-  ];
+  // สร้าง stackItems จาก gas config
+  const getStackItems = () => {
+    const items = [];
+    
+    // เพิ่มแก๊สเริ่มต้นที่ enabled
+    gasConfig.default_gases?.forEach(gas => {
+      if (gas.enabled) {
+        items.push({
+          label: gas.display_name,
+          unit: gas.unit,
+          icon: <CloudOutlined />,
+          desc: gas.display_name,
+          isGas: true
+        });
+      }
+    });
+    
+    // เพิ่มแก๊สเพิ่มเติมที่ enabled
+    gasConfig.additional_gases?.forEach(gas => {
+      if (gas.enabled) {
+        items.push({
+          label: gas.display_name,
+          unit: gas.unit,
+          icon: <ExperimentOutlined />,
+          desc: gas.display_name,
+          isGas: true
+        });
+      }
+    });
+    
+    // เพิ่มพารามิเตอร์อื่นๆ (ไม่ใช่แก๊ส)
+    const nonGasItems = [
+      { label: "Temperature", unit: "°C", icon: <FireOutlined />, desc: "Temperature" },
+      { label: "Velocity", unit: "m/s", icon: <RocketOutlined />, desc: "Gas Velocity" },
+      { label: "Flowrate", unit: "m³/h", icon: <ThunderboltOutlined />, desc: "Gas Flow Rate" },
+      { label: "Pressure", unit: "Pa", icon: <DashboardOutlined />, desc: "Gas Pressure" }
+    ];
+    
+    items.push(...nonGasItems);
+    
+    return items;
+  };
+
+  // สร้าง stackItems จาก gas config และอัปเดตเมื่อ gas config เปลี่ยน
+  const stackItems = getStackItems();
 
   const correctedItems = [
     { label: "SO₂", unit: "ppm", icon: <CloudOutlined />, desc: "Corrected SO₂" },
@@ -106,6 +143,20 @@ export default function Home() {
     { label: "CO", unit: "ppm", icon: <CloudOutlined />, desc: "Corrected CO" },
     { label: "Dust", unit: "mg/m³", icon: <ExperimentOutlined />, desc: "Corrected Dust" }
   ];
+
+  // ฟังก์ชันโหลด gas configuration
+  const loadGasConfig = async () => {
+    try {
+      const baseUrl = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
+      const response = await fetch(`${baseUrl}/config/gas`);
+      if (response.ok) {
+        const data = await response.json();
+        setGasConfig(data);
+      }
+    } catch (error) {
+      console.log("ไม่สามารถโหลด gas config ได้:", error);
+    }
+  };
 
   // ฟังก์ชันดึงข้อมูลจากฐานข้อมูล
   const fetchLatestData = async () => {
@@ -152,7 +203,27 @@ export default function Home() {
         
         // ใช้ corrected values จาก backend เท่านั้น (ไม่คำนวณซ้ำ)
 
-        setData({ ...data });
+        // ใช้ useRef เพื่อป้องกันการ re-render ที่ไม่จำเป็น
+        setData(prevData => {
+          // ตรวจสอบว่าข้อมูลเปลี่ยนจริงหรือไม่
+          const hasChanged = 
+            prevData.SO2 !== data.SO2 ||
+            prevData.NOx !== data.NOx ||
+            prevData.O2 !== data.O2 ||
+            prevData.CO !== data.CO ||
+            prevData.Dust !== data.Dust ||
+            prevData.Temperature !== data.Temperature ||
+            prevData.Velocity !== data.Velocity ||
+            prevData.Flowrate !== data.Flowrate ||
+            prevData.Pressure !== data.Pressure ||
+            prevData.SO2Corr !== data.SO2Corr ||
+            prevData.NOxCorr !== data.NOxCorr ||
+            prevData.COCorr !== data.COCorr ||
+            prevData.DustCorr !== data.DustCorr;
+          
+          // อัปเดตเฉพาะเมื่อข้อมูลเปลี่ยนจริง
+          return hasChanged ? { ...data } : prevData;
+        });
 
         const now = new Date();
         const hourKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}`;
@@ -163,9 +234,29 @@ export default function Home() {
 
         setConnectionError(false);
         setIsConnected(true);
+        
+        // ส่งสถานะไปยัง window object สำหรับ SystemAlertBar
+        window.cemsStatus = {
+          connection_status: msg.connection_status || "connected",
+          has_real_data: msg.has_real_data || false
+        };
       },
-      () => setConnectionError(true),
-      () => setIsConnected(false)
+      () => {
+        setConnectionError(true);
+        // ส่งสถานะ error ไปยัง window object
+        window.cemsStatus = {
+          connection_status: "error",
+          has_real_data: false
+        };
+      },
+      () => {
+        setIsConnected(false);
+        // ส่งสถานะ error ไปยัง window object
+        window.cemsStatus = {
+          connection_status: "error",
+          has_real_data: false
+        };
+      }
     );
   };
 
@@ -188,8 +279,11 @@ export default function Home() {
     connectGasWebSocket();
     connectStatusWebSocket();
     
-    // ดึงข้อมูลจากฐานข้อมูลทุก 30 วินาที
+    // โหลด gas config และดึงข้อมูลจากฐานข้อมูล
+    loadGasConfig();
     fetchLatestData();
+    
+    // ดึงข้อมูลจากฐานข้อมูลทุก 30 วินาที
     const dbInterval = setInterval(fetchLatestData, 30000);
     
     return () => {
@@ -199,6 +293,12 @@ export default function Home() {
       clearInterval(dbInterval);
       localStorage.removeItem("cems_alarmValues_prev");
     };
+  }, []);
+
+  // โหลด gas config ใหม่ทุก 10 วินาที
+  useEffect(() => {
+    const gasConfigInterval = setInterval(loadGasConfig, 10000);
+    return () => clearInterval(gasConfigInterval);
   }, []);
 
   const renderCard = (item, isCorrected = false) => {
@@ -236,8 +336,23 @@ export default function Home() {
     const parsed = Number(rawValue);
     const value = isNaN(parsed) ? "--" : parsed;
 
-    const limit = { SO2: 200, NOx: 300, CO: 100, Dust: 50 };
-    const isOverLimit = typeof value === "number" && limit[item.label] && value > limit[item.label];
+    // ใช้ alarm threshold จาก gas config
+    const getAlarmThreshold = (gasName) => {
+      // หาใน default_gases
+      const defaultGas = gasConfig.default_gases?.find(gas => gas.name === gasName);
+      if (defaultGas) return defaultGas.alarm_threshold;
+      
+      // หาใน additional_gases
+      const additionalGas = gasConfig.additional_gases?.find(gas => gas.name === gasName);
+      if (additionalGas) return additionalGas.alarm_threshold;
+      
+      // fallback ไปใช้ค่าเดิม
+      const fallbackLimit = { SO2: 200, NOx: 300, CO: 100, Dust: 50 };
+      return fallbackLimit[gasName] || 100;
+    };
+    
+    const alarmThreshold = getAlarmThreshold(item.label);
+    const isOverLimit = typeof value === "number" && alarmThreshold && value > alarmThreshold;
     
     // ✅ เพิ่มการตรวจสอบ Flowrate ที่ผิดปกติ
     const isFlowrateAbnormal = item.label === "Flowrate" && typeof value === "number" && value > 1000000;
@@ -258,14 +373,27 @@ export default function Home() {
       (item.label === "Dust" && alarmValues[2]) ||
       (item.label === "SO₂" && alarmValues[3]);
 
-    // ✅ กำหนดสีตามประเภทข้อมูล
+    // ✅ กำหนดสีตามค่าและระดับความรุนแรง
     let cardColor = THEME_COLOR;
+    
     if (isAlarmActive) {
       cardColor = CEMS_THEME.warning;
-    } else if (isOverLimit || isFlowrateAbnormal) {
+    } else if (isFlowrateAbnormal) {
       cardColor = CEMS_THEME.danger;
     } else if (item.label === "O₂") {
       cardColor = getO2Color(value);
+    } else if (isOverLimit) {
+      cardColor = CEMS_THEME.danger; // แดงเมื่อเกินค่าแจ้งเตือน
+    } else if (typeof value === "number" && alarmThreshold) {
+      // สีส้มเมื่อเข้าใกล้ค่าแจ้งเตือน (80% ของค่าแจ้งเตือน)
+      const warningThreshold = alarmThreshold * 0.8;
+      if (value >= warningThreshold) {
+        cardColor = CEMS_THEME.warning;
+      } else {
+        cardColor = THEME_COLOR; // สีปกติ
+      }
+    } else {
+      cardColor = THEME_COLOR;
     }
 
     return (
@@ -288,9 +416,29 @@ export default function Home() {
           <Tooltip title={item.desc}>
             <div style={{ fontSize: 13, color: THEME_COLOR }}>{item.icon} {item.label}</div>
           </Tooltip>
-          <div style={{ fontSize: 26, fontWeight: 700, color: cardColor, margin: "6px 0" }}>
-            {typeof value === "number" ? value.toLocaleString() : value}
-          </div>
+          <Tooltip title={typeof value === "number" ? value.toLocaleString() : value}>
+            <div style={{ 
+              fontSize: 26, 
+              fontWeight: 700, 
+              color: cardColor, 
+              margin: "6px 0",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              padding: "0 8px",
+              cursor: "help"
+            }}>
+              {typeof value === "number" ? 
+                (value > 999999999 ? 
+                  `${(value / 1000000000).toFixed(1)}B` :
+                  value > 999999 ? 
+                    `${(value / 1000000).toFixed(1)}M` : 
+                    value > 999 ? 
+                      `${(value / 1000).toFixed(1)}K` :
+                      value.toFixed(1)
+                ) : value}
+            </div>
+          </Tooltip>
           <Text type="secondary" style={{ fontSize: 12 }}>{item.unit}</Text>
         </Card>
       </Col>
@@ -357,9 +505,6 @@ export default function Home() {
                   {isConnected ? 'Connected' : 'Refresh'}
                 </Button>
               </Space>
-              {lastUpdated && (
-                <Text type="secondary" style={{ fontSize: 11 }}>Last updated: {lastUpdated}</Text>
-              )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{
                   width: 8,
@@ -372,6 +517,9 @@ export default function Home() {
                   {isConnected ? 'Connected' : 'Disconnected'}
                 </Text>
               </div>
+              {lastUpdated && (
+                <Text type="secondary" style={{ fontSize: 11 }}>Last updated: {lastUpdated}</Text>
+              )}
             </Space>
           </div>
 

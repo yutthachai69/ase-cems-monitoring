@@ -109,4 +109,37 @@ Thumbs.db
 
 # Electron
 out/
-app/ 
+app/
+
+# Build outputs and executables
+build-webportal/
+*.exe
+*.exe.blockmap
+*.zip
+*.dll
+*.pak
+*.bin
+*.dat
+*.html
+*.txt
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Log files
+*.csv
+*.log
+
+# Python cache and build
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/ 

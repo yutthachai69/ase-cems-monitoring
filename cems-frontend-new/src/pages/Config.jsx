@@ -20,7 +20,6 @@ import {
   Spin,
   Modal,
 } from "antd";
-import apiService from "../config/apiService";
 import {
   SettingOutlined,
   DatabaseOutlined,
@@ -33,7 +32,11 @@ import {
   ReloadOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
+  ExperimentOutlined,
+  BugOutlined,
 } from "@ant-design/icons";
+import SystemAlertBar from "../components/SystemAlertBar";
+import { CONFIG } from "../config/config";
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -45,6 +48,7 @@ export default function Config() {
   const [backendConnected, setBackendConnected] = useState(false);
   const [configData, setConfigData] = useState(null);
   const [mappingData, setMappingData] = useState([]);
+
   const [activeTab, setActiveTab] = useState("connection");
   const [editingDevice, setEditingDevice] = useState(null);
   const [editingMapping, setEditingMapping] = useState(null);
@@ -52,15 +56,36 @@ export default function Config() {
   const [modalType, setModalType] = useState("device"); // "device" or "mapping"
   const [selectedDevice, setSelectedDevice] = useState(null); // เพิ่ม state สำหรับอุปกรณ์ที่เลือก
   const [selectedParameter, setSelectedParameter] = useState(null); // เพิ่ม state สำหรับพารามิเตอร์ที่เลือก
+  const [gasConfig, setGasConfig] = useState({
+    default_gases: [],
+    additional_gases: []
+  });
+  const [gasConfigMessage, setGasConfigMessage] = useState('');
+  const [isGasModalVisible, setIsGasModalVisible] = useState(false);
 
-  // Form instances
+  const [newGasConfig, setNewGasConfig] = useState({
+    name: '',
+    display_name: '',
+    unit: 'ppm',
+    enabled: true,
+    alarm_threshold: 50
+  });
+
+  
+
+  // Form instances - ใช้ lazy initialization เพื่อป้องกัน warning
   const [deviceForm] = Form.useForm();
   const [mappingForm] = Form.useForm();
+  const [gasForm] = Form.useForm();
+  
+  // ใช้ lazy initialization สำหรับ systemForm - สร้างเมื่อจำเป็น
   const [systemForm] = Form.useForm();
   
 
 
-
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
+  const auth = (() => { try { return JSON.parse(localStorage.getItem('auth')) || {}; } catch { return {}; } })();
+  const authHeaders = auth.token ? { Authorization: `Bearer ${auth.token}` } : {};
 
   // ✅ เพิ่ม Device Parameter Mapping
   const deviceParameterMapping = {
@@ -179,8 +204,112 @@ export default function Config() {
     }
   };
 
+  // ✅ ฟังก์ชันสำหรับ Status & Alarm
+  const getStatusAlarmDescription = (name) => {
+    const descriptions = {
+      // Status descriptions
+      "Maintenance Mode": "โหมดบำรุงรักษา",
+      "Calibration Through Probe": "การสอบเทียบผ่าน probe",
+      "Manual Blowback Button": "ปุ่ม blowback แบบมือ",
+      "Analyzer Calibration": "การสอบเทียบเครื่องวิเคราะห์",
+      "Analyzer Holding Zero": "เครื่องวิเคราะห์ถือค่า zero",
+      "Analyzer Zero Indicator": "ตัวบ่งชี้ zero ของเครื่องวิเคราะห์",
+      "Sampling SOV": "Solenoid valve สำหรับการสุ่มตัวอย่าง",
+      "Sampling Pump": "ปั๊มสุ่มตัวอย่าง",
+      "Direct Calibration SOV": "Solenoid valve สำหรับการสอบเทียบโดยตรง",
+      "Blowback SOV": "Solenoid valve สำหรับ blowback",
+      "Calibration Through Probe SOV": "Solenoid valve สำหรับการสอบเทียบผ่าน probe",
+      "Calibration Through Probe Light": "ไฟแสดงการสอบเทียบผ่าน probe",
+      "Blowback Light": "ไฟแสดง blowback",
+      "Blowback in Operation": "Blowback กำลังทำงาน",
+      "Hold Current Value": "ถือค่าปัจจุบัน",
+      
+      // Alarm descriptions
+      "Temperature Controller Alarm": "แจ้งเตือนตัวควบคุมอุณหภูมิ",
+      "Analyzer Malfunction": "เครื่องวิเคราะห์ทำงานผิดปกติ",
+      "Sample Probe Alarm": "แจ้งเตือน probe สุ่มตัวอย่าง",
+      "Alarm Light": "ไฟแจ้งเตือน"
+    };
+    
+    return descriptions[name] || "ไม่ระบุ";
+  };
+
+  // ✅ ฟังก์ชันสำหรับ Address อัตโนมัติของ Status & Alarm
+  const getStatusAlarmAddress = (name, deviceType) => {
+    if (deviceType === "test4") {
+      // Status addresses (0-14)
+      const statusAddresses = {
+        "Maintenance Mode": 0,
+        "Calibration Through Probe": 1,
+        "Manual Blowback Button": 2,
+        "Analyzer Calibration": 3,
+        "Analyzer Holding Zero": 4,
+        "Analyzer Zero Indicator": 5,
+        "Sampling SOV": 6,
+        "Sampling Pump": 7,
+        "Direct Calibration SOV": 8,
+        "Blowback SOV": 9,
+        "Calibration Through Probe SOV": 10,
+        "Calibration Through Probe Light": 11,
+        "Blowback Light": 12,
+        "Blowback in Operation": 13,
+        "Hold Current Value": 14
+      };
+      return statusAddresses[name] !== undefined ? statusAddresses[name] : null;
+    } else if (deviceType === "test5") {
+      // Alarm addresses (0-3)
+      const alarmAddresses = {
+        "Temperature Controller Alarm": 0,
+        "Analyzer Malfunction": 1,
+        "Sample Probe Alarm": 2,
+        "Alarm Light": 3
+      };
+      return alarmAddresses[name] !== undefined ? alarmAddresses[name] : null;
+    }
+    return null;
+  };
+
+  // ✅ ฟังก์ชันสำหรับ Unit อัตโนมัติของ Status & Alarm
+  const getStatusAlarmUnit = () => {
+    // Status & Alarm ใช้ค่า 0/1 หรือ ON/OFF
+    return "ON/OFF";
+  };
+
+  // ฟังก์ชันสำหรับรายการชื่อที่แนะนำตามประเภท
+  const getSuggestedNames = (type) => {
+    if (type === "test4") {
+      return [
+        "Maintenance Mode",
+        "Calibration Through Probe", 
+        "Manual Blowback Button",
+        "Analyzer Calibration",
+        "Analyzer Holding Zero",
+        "Analyzer Zero Indicator",
+        "Sampling SOV",
+        "Sampling Pump",
+        "Direct Calibration SOV",
+        "Blowback SOV",
+        "Calibration Through Probe SOV",
+        "Calibration Through Probe Light",
+        "Blowback Light",
+        "Blowback in Operation",
+        "Hold Current Value"
+      ];
+    } else if (type === "test5") {
+      return [
+        "Temperature Controller Alarm",
+        "Analyzer Malfunction",
+        "Sample Probe Alarm",
+        "Alarm Light"
+      ];
+    }
+    return [];
+  };
+
   // ✅ เพิ่มฟังก์ชันคำนวณพื้นที่อัตโนมัติ
   const calculateArea = () => {
+    if (!systemForm) return;
+    
     const shape = systemForm.getFieldValue("stack_shape");
     
     if (shape === "circular") {
@@ -199,6 +328,8 @@ export default function Config() {
         
         systemForm.setFieldValue("stack_diameter", parseFloat(diameter.toFixed(3)));
         systemForm.setFieldValue("stack_area", parseFloat(area.toFixed(3)));
+        
+        console.log(`การคำนวณ: เส้นรอบวง ${circumference}m → เส้นผ่านศูนย์กลาง ${diameter.toFixed(3)}m → พื้นที่ ${area.toFixed(3)}m²`);
       }
     } else if (shape === "rectangular") {
       const width = systemForm.getFieldValue("stack_width");
@@ -213,9 +344,13 @@ export default function Config() {
   // Check backend connection
   const checkBackendConnection = async () => {
     try {
-      const connected = await apiService.checkBackendConnection();
-      setBackendConnected(connected);
-      return connected;
+      const res = await fetch(`${backendUrl}/health`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(3000),
+        headers: { ...authHeaders }
+      });
+      setBackendConnected(res.ok);
+      return res.ok;
     } catch {
       setBackendConnected(false);
       return false;
@@ -224,32 +359,35 @@ export default function Config() {
 
   // Load configuration data
   const loadConfigData = async () => {
-    if (!backendConnected) return;
+    // ลบการตรวจสอบ backendConnected ออก เพื่อให้โหลดข้อมูลได้
+    // if (!backendConnected) return;
     
     setLoading(true);
     try {
       // Load config
-      const config = await apiService.getConfig();
-      setConfigData(config);
-      
-      // Set form values
-      try {
-        systemForm.setFieldsValue({
-          log_interval: config.connection?.log_interval || 60,
-          reconnect_interval: config.connection?.reconnect_interval || 60,
-          alarm_threshold_so2: config.connection?.alarm_threshold?.SO2 || 200,
-          alarm_threshold_co: config.connection?.alarm_threshold?.CO || 100,
-          alarm_threshold_dust: config.connection?.alarm_threshold?.Dust || 50,
-          stack_area: config.stack_info?.area || 1.0,
-          stack_diameter: config.stack_info?.diameter || 1.0,
-        });
-      } catch {
-        // Form not mounted yet, ignore
+      const configRes = await fetch(
+        `${backendUrl}/config?ts=${Date.now()}`,
+        { headers: { ...authHeaders }, cache: 'no-store' }
+      );
+      if (configRes.ok) {
+        const config = await configRes.json();
+        setConfigData(config);
+        
+        // Form values will be set in useEffect after component mounts
       }
 
       // Load mapping
-      const mapping = await apiService.getMapping();
-      setMappingData(mapping);
+      const mappingRes = await fetch(
+        `${backendUrl}/mapping?ts=${Date.now()}`,
+        { headers: { ...authHeaders }, cache: 'no-store' }
+      );
+      if (mappingRes.ok) {
+        const mapping = await mappingRes.json();
+        console.log("Loaded mapping data:", mapping);
+        console.log("Mapping data length:", mapping.length);
+        console.log("Mapping data structure:", mapping.map((item, idx) => ({ index: idx, ...item })));
+        setMappingData(mapping);
+      }
     } catch (error) {
       message.error("❌ ไม่สามารถโหลดข้อมูลได้");
       console.error("Error loading config:", error);
@@ -258,25 +396,274 @@ export default function Config() {
     }
   };
 
+  // ทดสอบ backend mapping endpoint (merge-only หรือ replace)
+  const testBackendMapping = async () => {
+    // ลบการตรวจสอบ backendConnected ออก เพื่อให้ทดสอบได้
+    // if (!backendConnected) {
+    //   message.error("❌ ไม่สามารถเชื่อมต่อกับ Backend ได้");
+    //   return;
+    // }
+
+    try {
+      console.log("=== TESTING BACKEND MAPPING ENDPOINT ===");
+      
+      // 1) เอาข้อมูลปัจจุบันมาเก็บไว้
+      const cur = await (await fetch(`${backendUrl}/mapping?ts=${Date.now()}`, { 
+        headers: { ...authHeaders }, 
+        cache: 'no-store' 
+      })).json();
+      console.log("Current mapping length:", cur.length);
+
+      // 2) ลอง PUT เป็นอาร์เรย์ว่าง (ถ้า "replace" จริง ควรได้ว่าง)
+      const emptyRes = await fetch(`${backendUrl}/mapping`, {
+        method: 'PUT',
+        headers: { 'Content-Type':'application/json', ...authHeaders },
+        body: JSON.stringify([]),
+      });
+      console.log("PUT empty array response status:", emptyRes.status);
+
+      // 3) อ่านกลับ
+      const after = await (await fetch(`${backendUrl}/mapping?ts=${Date.now()}`, { 
+        headers: { ...authHeaders }, 
+        cache: 'no-store' 
+      })).json();
+      console.log('After PUT empty array length =', after.length);
+
+      // 4) ฟื้นฟูข้อมูลเดิม
+      const restoreRes = await fetch(`${backendUrl}/mapping`, {
+        method: 'PUT',
+        headers: { 'Content-Type':'application/json', ...authHeaders },
+        body: JSON.stringify(cur),
+      });
+      console.log("Restore original data response status:", restoreRes.status);
+
+      // สรุปผล
+      if (after.length === 0) {
+        console.log("✅ Backend is REPLACE mode - delete should work!");
+        message.success("✅ Backend เป็น REPLACE mode - ปุ่มลบควรทำงานได้");
+      } else {
+        console.log("❌ Backend is MERGE-ONLY mode - delete won't work!");
+        message.error("❌ Backend เป็น MERGE-ONLY mode - ปุ่มลบจะไม่ทำงาน");
+      }
+
+    } catch (error) {
+      console.error("Error testing backend mapping:", error);
+      message.error("❌ เกิดข้อผิดพลาดในการทดสอบ");
+    }
+  };
+
+  // Load gas configuration
+  const loadGasConfig = async () => {
+    try {
+      const response = await fetch(`${backendUrl}/config/gas`, { headers: { ...authHeaders } });
+      if (response.ok) {
+        const data = await response.json();
+        setGasConfig(data);
+      }
+    } catch (error) {
+      console.error('Error loading gas config:', error);
+      setGasConfigMessage('Error loading gas configuration');
+    }
+  };
+
+  
+
+  // Toggle gas display
+  const toggleGas = async (gasName, enabled) => {
+    try {
+      const response = await fetch(`${backendUrl}/config/gas/toggle`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+        body: JSON.stringify({
+          gas_name: gasName,
+          enabled: enabled
+        })
+      });
+      
+      if (response.ok) {
+        // อัปเดต state
+        setGasConfig(prev => ({
+          default_gases: prev.default_gases.map(gas => 
+            gas.name === gasName ? { ...gas, enabled } : gas
+          ),
+          additional_gases: prev.additional_gases.map(gas => 
+            gas.name === gasName ? { ...gas, enabled } : gas
+          )
+        }));
+        
+        setGasConfigMessage(`${gasName} ${enabled ? 'enabled' : 'disabled'} successfully`);
+      }
+    } catch (error) {
+      console.error('Error toggling gas:', error);
+      setGasConfigMessage('Error updating gas configuration');
+    }
+  };
+
+  // Add new gas to additional gases
+  const addNewGas = async () => {
+    try {
+      // ตรวจสอบว่าข้อมูลครบหรือไม่
+      if (!newGasConfig.name || !newGasConfig.display_name || !newGasConfig.unit || newGasConfig.alarm_threshold === undefined) {
+        setGasConfigMessage('กรุณากรอกข้อมูลให้ครบถ้วน');
+        return;
+      }
+
+      // ตรวจสอบว่าชื่อแก๊สซ้ำหรือไม่
+      const isDuplicate = gasConfig.default_gases?.some(gas => gas.name === newGasConfig.name) ||
+                         gasConfig.additional_gases?.some(gas => gas.name === newGasConfig.name);
+      
+      if (isDuplicate) {
+        setGasConfigMessage('ชื่อแก๊สนี้มีอยู่แล้ว กรุณาใช้ชื่ออื่น');
+        return;
+      }
+
+      const updatedConfig = {
+        default_gases: gasConfig.default_gases,
+        additional_gases: [...gasConfig.additional_gases, newGasConfig]
+      };
+
+      const response = await fetch(`${backendUrl}/config/gas`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+        body: JSON.stringify(updatedConfig)
+      });
+
+      if (response.ok) {
+        setGasConfig(updatedConfig);
+        setGasConfigMessage(`${newGasConfig.display_name} added successfully`);
+        setIsGasModalVisible(false);
+        // รีเซ็ตฟอร์ม
+        setNewGasConfig({
+          name: '',
+          display_name: '',
+          unit: 'ppm',
+          enabled: true,
+          alarm_threshold: 50
+        });
+        gasForm.resetFields();
+      }
+    } catch (error) {
+      console.error('Error adding gas:', error);
+      setGasConfigMessage('Error adding gas');
+    }
+  };
+
+
+
+  // Remove gas from additional gases
+  const removeGas = async (gasName) => {
+    try {
+      const updatedConfig = {
+        default_gases: gasConfig.default_gases,
+        additional_gases: gasConfig.additional_gases.filter(gas => gas.name !== gasName)
+      };
+
+      const response = await fetch(`${backendUrl}/config/gas`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+        body: JSON.stringify(updatedConfig)
+      });
+
+      if (response.ok) {
+        setGasConfig(updatedConfig);
+        setGasConfigMessage(`${gasName} removed successfully`);
+      }
+    } catch (error) {
+      console.error('Error removing gas:', error);
+      setGasConfigMessage('Error removing gas');
+    }
+  };
+
+  // Update alarm threshold
+  const updateAlarmThreshold = async (gasName, threshold) => {
+    try {
+      const updatedConfig = {
+        default_gases: gasConfig.default_gases.map(gas => 
+          gas.name === gasName ? { ...gas, alarm_threshold: threshold } : gas
+        ),
+        additional_gases: gasConfig.additional_gases.map(gas => 
+          gas.name === gasName ? { ...gas, alarm_threshold: threshold } : gas
+        )
+      };
+
+      const response = await fetch(`${backendUrl}/config/gas`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+        body: JSON.stringify(updatedConfig)
+      });
+
+      if (response.ok) {
+        setGasConfig(updatedConfig);
+        setGasConfigMessage(`Alarm threshold for ${gasName} updated successfully`);
+      }
+    } catch (error) {
+      console.error('Error updating alarm threshold:', error);
+      setGasConfigMessage('Error updating alarm threshold');
+    }
+  };
+
+  // Update gas range
+  const updateGasRange = async (gasName, field, value) => {
+    try {
+      const updatedConfig = {
+        default_gases: gasConfig.default_gases.map(gas => 
+          gas.name === gasName ? { ...gas, [field]: value } : gas
+        ),
+        additional_gases: gasConfig.additional_gases.map(gas => 
+          gas.name === gasName ? { ...gas, [field]: value } : gas
+        )
+      };
+
+      const response = await fetch(`${backendUrl}/config/gas`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updatedConfig)
+      });
+
+      if (response.ok) {
+        setGasConfig(updatedConfig);
+        setGasConfigMessage(`Range for ${gasName} updated successfully`);
+      }
+    } catch (error) {
+      console.error('Error updating gas range:', error);
+      setGasConfigMessage('Error updating gas range');
+    }
+  };
+
   // Save configuration
   const saveConfig = async (values) => {
-    if (!backendConnected) {
-      message.error("❌ ไม่สามารถเชื่อมต่อกับ Backend ได้");
-      return;
-    }
+    // ลบการตรวจสอบ backendConnected ออก เพื่อให้บันทึกได้
+    // if (!backendConnected) {
+    //   message.error("❌ ไม่สามารถเชื่อมต่อกับ Backend ได้");
+    //   return;
+    // }
 
     setLoading(true);
     try {
       const configToSave = {
         connection: {
           devices: configData?.connection?.devices || [],
-          alarm_threshold: {
-            SO2: values.alarm_threshold_so2,
-            CO: values.alarm_threshold_co,
-            Dust: values.alarm_threshold_dust,
+          parameter_threshold: {
+            Temperature: values.temperature_threshold,
+            Pressure: values.pressure_threshold,
+            Velocity: values.velocity_threshold,
           },
-          log_interval: values.log_interval,
-          reconnect_interval: values.reconnect_interval,
+          log_interval: Math.round(values.log_interval * 60), // แปลงนาทีเป็นวินาที (ปัดเศษ)
+          reconnect_interval: Math.round(values.reconnect_interval * 60), // แปลงนาทีเป็นวินาที (ปัดเศษ)
         },
         stack_info: {
           area: values.stack_area,
@@ -284,9 +671,18 @@ export default function Config() {
         }
       };
 
-      await apiService.updateConfig(configToSave);
-      message.success("✅ บันทึกการตั้งค่าเรียบร้อยแล้ว");
-      await loadConfigData(); // Reload data
+      const res = await fetch(`${backendUrl}/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify(configToSave)
+      });
+
+      if (res.ok) {
+        message.success("✅ บันทึกการตั้งค่าเรียบร้อยแล้ว");
+        await loadConfigData(); // Reload data
+      } else {
+        message.error("❌ ไม่สามารถบันทึกการตั้งค่าได้");
+      }
     } catch (error) {
       message.error("❌ เกิดข้อผิดพลาดในการบันทึก");
       console.error("Error saving config:", error);
@@ -299,9 +695,19 @@ export default function Config() {
 
   // Add device
   const addDevice = () => {
+    console.log("🔧 addDevice called");
+    console.log("Current modalType:", modalType);
+    console.log("Current isModalVisible:", isModalVisible);
+    
     setModalType("device");
     setEditingDevice(null);
     setIsModalVisible(true);
+    
+    console.log("After setState - modalType:", "device");
+    console.log("After setState - isModalVisible:", true);
+    
+    // Reset form fields
+    deviceForm.resetFields();
   };
 
   // Edit device
@@ -314,10 +720,11 @@ export default function Config() {
 
   // Delete device
   const deleteDevice = async (index) => {
-    if (!backendConnected) {
-      message.error("❌ ไม่สามารถเชื่อมต่อกับ Backend ได้");
-      return;
-    }
+    // ลบการตรวจสอบ backendConnected ออก เพื่อให้ลบอุปกรณ์ได้
+    // if (!backendConnected) {
+    //   message.error("❌ ไม่สามารถเชื่อมต่อกับ Backend ได้");
+    //   return;
+    // }
 
     Modal.confirm({
       title: "ยืนยันการลบ",
@@ -337,7 +744,7 @@ export default function Config() {
 
           const res = await fetch(`${backendUrl}/config`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
             body: JSON.stringify(configToSave)
           });
 
@@ -357,13 +764,19 @@ export default function Config() {
 
   // Save device
   const saveDevice = async () => {
-    if (!backendConnected) {
-      message.error("❌ ไม่สามารถเชื่อมต่อกับ Backend ได้");
-      return;
-    }
+    console.log("🔧 saveDevice called");
+    console.log("Backend connected:", backendConnected);
+    
+    // ลบการตรวจสอบ backendConnected ออก เพื่อให้เพิ่มอุปกรณ์ได้
+    // if (!backendConnected) {
+    //   message.error("❌ ไม่สามารถเชื่อมต่อกับ Backend ได้");
+    //   return;
+    // }
 
     try {
+      console.log("🔧 Validating form fields...");
       const values = await deviceForm.validateFields();
+      console.log("🔧 Form values:", values);
       const newDevices = [...(configData?.connection?.devices || [])];
       
       if (editingDevice !== null) {
@@ -385,7 +798,7 @@ export default function Config() {
 
       const res = await fetch(`${backendUrl}/config`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(configToSave)
       });
 
@@ -413,6 +826,15 @@ export default function Config() {
     setIsModalVisible(true);
   };
 
+  // Add Status & Alarm mapping
+  const addStatusAlarmMapping = () => {
+    setModalType("status-alarm");
+    setEditingMapping(null);
+    setSelectedDevice(null);
+    setSelectedParameter(null);
+    setIsModalVisible(true);
+  };
+
   // Edit mapping
   const editMapping = (mapping, index) => {
     setModalType("mapping");
@@ -424,34 +846,56 @@ export default function Config() {
   };
 
   // Delete mapping
-  const deleteMapping = async (index) => {
-    if (!backendConnected) {
-      message.error("❌ ไม่สามารถเชื่อมต่อกับ Backend ได้");
-      return;
-    }
+  const deleteMapping = async (rowKey) => {
+    console.log("=== DELETE MAPPING FUNCTION CALLED ===");
+    console.log("RowKey:", rowKey);
+    console.log("MappingData length:", mappingData.length);
+    
+    // ลบการตรวจสอบ backendConnected ออก เพื่อให้ลบได้
+    // if (!backendConnected) {
+    //   message.error("❌ ไม่สามารถเชื่อมต่อกับ Backend ได้");
+    //   return;
+    // }
 
     Modal.confirm({
       title: "ยืนยันการลบ",
       content: "คุณต้องการลบการแมปข้อมูลนี้หรือไม่?",
       onOk: async () => {
         try {
-          const newMapping = [...mappingData];
-          newMapping.splice(index, 1);
+          const idx = mappingData.findIndex(m => mappingRowKey(m) === rowKey);
+          if (idx === -1) {
+            message.error("❌ ไม่พบข้อมูลที่ต้องการลบ");
+            return;
+          }
+
+          const newMapping = mappingData.filter((_, i) => i !== idx);
           
+          console.log("Sending delete request:", { 
+            originalLength: mappingData.length, 
+            newLength: newMapping.length, 
+            deletedItem: mappingData[idx] 
+          });
+
           const res = await fetch(`${backendUrl}/mapping`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
             body: JSON.stringify(newMapping)
           });
 
-          if (res.ok) {
-            setMappingData(newMapping);
-            message.success("✅ ลบการแมปข้อมูลเรียบร้อยแล้ว");
-          } else {
+          console.log("Backend response status:", res.status, res.statusText);
+
+          if (!res.ok) {
+            const errText = await res.text().catch(() => "");
+            console.error("Backend error:", res.status, errText);
             message.error("❌ ไม่สามารถลบการแมปข้อมูลได้");
+            return;
           }
-        } catch (error) {
-          console.error("Error deleting mapping:", error);
+
+          setMappingData(newMapping);           // อัปเดตหน้าให้เห็นทันที
+          await loadConfigData();                // ดึงจาก backend ยืนยันผล
+          message.success("✅ ลบการแมปข้อมูลเรียบร้อยแล้ว");
+        } catch (e) {
+          console.error("Error deleting mapping:", e);
           message.error("❌ เกิดข้อผิดพลาดในการลบ");
         }
       }
@@ -460,10 +904,11 @@ export default function Config() {
 
   // Save mapping
   const saveMappingItem = async () => {
-    if (!backendConnected) {
-      message.error("❌ ไม่สามารถเชื่อมต่อกับ Backend ได้");
-      return;
-    }
+    // ลบการตรวจสอบ backendConnected ออก เพื่อให้บันทึกได้
+    // if (!backendConnected) {
+    //   message.error("❌ ไม่สามารถเชื่อมต่อกับ Backend ได้");
+    //   return;
+    // }
 
     try {
       const values = await mappingForm.validateFields();
@@ -478,14 +923,23 @@ export default function Config() {
       }
 
       // Save to backend
-      await apiService.updateMapping(newMapping);
-      setMappingData(newMapping);
-      setIsModalVisible(false);
-      setSelectedDevice(null);
-      setSelectedParameter(null);
-      message.success(editingMapping ? "✅ แก้ไขการแมปข้อมูลเรียบร้อยแล้ว" : "✅ เพิ่มการแมปข้อมูลเรียบร้อยแล้ว");
-      // Reload mapping to ensure backend has latest data
-      await loadConfigData();
+      const res = await fetch(`${backendUrl}/mapping`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify(newMapping)
+      });
+
+      if (res.ok) {
+        setMappingData(newMapping);
+        setIsModalVisible(false);
+        setSelectedDevice(null);
+        setSelectedParameter(null);
+        message.success(editingMapping ? "✅ แก้ไขการแมปข้อมูลเรียบร้อยแล้ว" : "✅ เพิ่มการแมปข้อมูลเรียบร้อยแล้ว");
+        // Reload mapping to ensure backend has latest data
+        await loadConfigData();
+      } else {
+        message.error("❌ ไม่สามารถบันทึกการแมปข้อมูลได้");
+      }
     } catch (error) {
       console.error("Form validation error:", error);
       message.error("❌ เกิดข้อผิดพลาดในการบันทึก");
@@ -500,9 +954,17 @@ export default function Config() {
       onOk: async () => {
         setLoading(true);
         try {
-          await apiService.resetConfig();
-          message.success("✅ รีเซ็ตการตั้งค่าเรียบร้อยแล้ว");
-          await loadConfigData();
+          const res = await fetch(`${backendUrl}/reset-config`, {
+            method: 'POST',
+            headers: { ...authHeaders }
+          });
+          
+          if (res.ok) {
+            message.success("✅ รีเซ็ตการตั้งค่าเรียบร้อยแล้ว");
+            await loadConfigData();
+          } else {
+            message.error("❌ ไม่สามารถรีเซ็ตการตั้งค่าได้");
+          }
         } catch (error) {
           message.error("❌ เกิดข้อผิดพลาดในการรีเซ็ต");
           console.error("Error resetting config:", error);
@@ -516,13 +978,32 @@ export default function Config() {
   // Load configuration on mount
   useEffect(() => {
     const init = async () => {
-      const connected = await checkBackendConnection();
-      if (connected) {
-        await loadConfigData();
-      }
+      await checkBackendConnection();
+      // ลบการตรวจสอบ backendConnected ออก เพื่อให้โหลดข้อมูลได้
+      await loadConfigData();
+      await loadGasConfig();
     };
     init();
-  }, [backendConnected]);
+  }, []); // ลบ dependency บน backendConnected ออก
+
+  // Set form values after component mounts
+  useEffect(() => {
+    if (configData && systemForm) {
+      try {
+        systemForm.setFieldsValue({
+          log_interval: parseFloat(((configData.connection?.log_interval || 60) / 60).toFixed(2)),
+          reconnect_interval: parseFloat(((configData.connection?.reconnect_interval || 60) / 60).toFixed(2)),
+          temperature_threshold: configData.connection?.parameter_threshold?.Temperature || 80,
+          pressure_threshold: configData.connection?.parameter_threshold?.Pressure || 1000,
+          velocity_threshold: configData.connection?.parameter_threshold?.Velocity || 30,
+          stack_area: configData.stack_info?.area || 1.0,
+          stack_diameter: configData.stack_info?.diameter || 1.0,
+        });
+      } catch (error) {
+        console.log('Form not ready yet:', error);
+      }
+    }
+  }, [configData, systemForm]);
 
   // Device columns for table
   const deviceColumns = [
@@ -576,6 +1057,10 @@ export default function Config() {
     },
   ];
 
+  // คีย์ที่ไม่ซ้ำต่อรายการ (ปรับ field ตามจริงที่มีแน่นอน)
+  const mappingRowKey = (m) =>
+    `${m.device}::${m.name}::${m.address}::${m.dataType}::${m.dataFormat}`;
+
   // Mapping columns for table
   const mappingColumns = [
     {
@@ -613,25 +1098,25 @@ export default function Config() {
     {
       title: "การดำเนินการ",
       key: "actions",
-      render: (_, record, index) => (
-        <Space>
-          <Button
-            type="link"
-            icon={<EditOutlined />}
-            onClick={() => editMapping(record, index)}
-          >
-            แก้ไข
-          </Button>
-          <Button
-            type="link"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => deleteMapping(index)}
-          >
-            ลบ
-          </Button>
-        </Space>
-      ),
+              render: (_, record) => (
+          <Space>
+            <Button
+              type="link"
+              icon={<EditOutlined />}
+              onClick={() => editMapping(record)}
+            >
+              แก้ไข
+            </Button>
+            <Button
+              type="link"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => deleteMapping(mappingRowKey(record))}
+            >
+              ลบ
+            </Button>
+          </Space>
+        ),
     },
   ];
 
@@ -648,13 +1133,27 @@ export default function Config() {
       children: (
         <Card title="การตั้งค่าการเชื่อมต่ออุปกรณ์" size="small">
           <Space direction="vertical" style={{ width: "100%" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <Title level={5}>อุปกรณ์ Modbus</Title>
+            <div style={{ 
+              display: "flex", 
+              justifyContent: "space-between", 
+              alignItems: "center",
+              padding: "16px",
+              background: "linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)",
+              borderRadius: "8px",
+              marginBottom: "16px"
+            }}>
+              <div>
+                <Title level={5} style={{ margin: 0, color: "#333" }}>อุปกรณ์ Modbus</Title>
+                <Text type="secondary" style={{ fontSize: "14px" }}>
+                  จัดการอุปกรณ์ Modbus TCP/RTU สำหรับการเชื่อมต่อเซ็นเซอร์
+                </Text>
+              </div>
               <Space>
                 <Button
                   icon={<ReloadOutlined />}
                   onClick={loadConfigData}
                   loading={loading}
+                  style={{ borderRadius: "8px" }}
                 >
                   โหลดใหม่
                 </Button>
@@ -662,6 +1161,7 @@ export default function Config() {
                   type="primary"
                   icon={<PlusOutlined />}
                   onClick={addDevice}
+                  style={{ borderRadius: "8px" }}
                 >
                   เพิ่มอุปกรณ์
                 </Button>
@@ -674,6 +1174,7 @@ export default function Config() {
               rowKey="name"
               pagination={false}
               size="small"
+              scroll={{ x: 'max-content' }}
             />
           </Space>
         </Card>
@@ -707,15 +1208,31 @@ export default function Config() {
                 >
                   เพิ่มการแมป
                 </Button>
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={addStatusAlarmMapping}
+                  style={{ background: "#52c41a", borderColor: "#52c41a" }}
+                >
+                  เพิ่ม Status/Alarm
+                </Button>
+                <Button
+                  type="dashed"
+                  icon={<BugOutlined />}
+                  onClick={testBackendMapping}
+                >
+                  ทดสอบ Backend
+                </Button>
               </Space>
             </div>
             
             <Table
               dataSource={mappingData}
               columns={mappingColumns}
-              rowKey="name"
+              rowKey={mappingRowKey}
               pagination={false}
               size="small"
+              scroll={{ x: 'max-content' }}
             />
           </Space>
         </Card>
@@ -726,11 +1243,11 @@ export default function Config() {
       label: (
         <span>
           <SettingOutlined />
-          การตั้งค่าระบบ
+          การตั้งค่าพารามิเตอร์อื่นๆ
         </span>
       ),
       children: (
-        <Card title="การตั้งค่าระบบ" size="small">
+        <Card title="การตั้งค่าพารามิเตอร์อื่นๆ" size="small">
           <Form
             form={systemForm}
             layout="vertical"
@@ -740,46 +1257,60 @@ export default function Config() {
               <Col span={12}>
                 <Title level={5}>การตั้งค่าการบันทึก</Title>
                 <Form.Item
-                  label="ช่วงเวลาบันทึก (วินาที)"
+                  label="ช่วงเวลาบันทึก (นาที)"
                   name="log_interval"
                   rules={[{ required: true, message: "กรุณาระบุช่วงเวลาบันทึก" }]}
                 >
-                  <InputNumber min={1} max={3600} style={{ width: "100%" }} />
+                  <Input 
+                    type="number" 
+                    min="0.01" 
+                    max="1440" 
+                    step="0.01"
+                    style={{ width: "100%" }} 
+                    placeholder="เช่น 0.17 = 10 วินาที, 1 = 1 นาที, 60 = 1 ชั่วโมง"
+                  />
                 </Form.Item>
                 
                 <Form.Item
-                  label="ช่วงเวลาลองเชื่อมต่อใหม่ (วินาที)"
+                  label="ช่วงเวลาลองเชื่อมต่อใหม่ (นาที)"
                   name="reconnect_interval"
                   rules={[{ required: true, message: "กรุณาระบุช่วงเวลาลองเชื่อมต่อใหม่" }]}
                 >
-                  <InputNumber min={1} max={3600} style={{ width: "100%" }} />
+                  <Input 
+                    type="number" 
+                    min="0.01" 
+                    max="1440" 
+                    step="0.01"
+                    style={{ width: "100%" }} 
+                    placeholder="เช่น 0.17 = 10 วินาที, 1 = 1 นาที"
+                  />
                 </Form.Item>
               </Col>
               
               <Col span={12}>
-                <Title level={5}>การตั้งค่า Alarm Threshold</Title>
+                <Title level={5}>การตั้งค่าพารามิเตอร์อื่นๆ</Title>
                 <Form.Item
-                  label="SO₂ (ppm)"
-                  name="alarm_threshold_so2"
-                  rules={[{ required: true, message: "กรุณาระบุค่า SO₂" }]}
+                  label="Temperature (°C)"
+                  name="temperature_threshold"
+                  rules={[{ required: true, message: "กรุณาระบุค่า Temperature" }]}
                 >
-                  <InputNumber min={0} style={{ width: "100%" }} />
+                  <InputNumber min={-50} max={200} style={{ width: "100%" }} />
                 </Form.Item>
                 
                 <Form.Item
-                  label="CO (ppm)"
-                  name="alarm_threshold_co"
-                  rules={[{ required: true, message: "กรุณาระบุค่า CO" }]}
+                  label="Pressure (Pa)"
+                  name="pressure_threshold"
+                  rules={[{ required: true, message: "กรุณาระบุค่า Pressure" }]}
                 >
-                  <InputNumber min={0} style={{ width: "100%" }} />
+                  <InputNumber min={0} max={10000} style={{ width: "100%" }} />
                 </Form.Item>
                 
                 <Form.Item
-                  label="Dust (mg/m³)"
-                  name="alarm_threshold_dust"
-                  rules={[{ required: true, message: "กรุณาระบุค่า Dust" }]}
+                  label="Velocity (m/s)"
+                  name="velocity_threshold"
+                  rules={[{ required: true, message: "กรุณาระบุค่า Velocity" }]}
                 >
-                  <InputNumber min={0} style={{ width: "100%" }} />
+                  <InputNumber min={0} max={100} style={{ width: "100%" }} />
                 </Form.Item>
               </Col>
             </Row>
@@ -799,6 +1330,7 @@ export default function Config() {
                 <Option value="circular_circumference">วงกลม - ใส่เส้นรอบวง</Option>
                 <Option value="rectangular">สี่เหลี่ยม (Rectangular)</Option>
                 <Option value="custom">กำหนดเอง (Custom)</Option>
+                <Option value="manual_area">ใส่พื้นที่โดยตรง</Option>
               </Select>
             </Form.Item>
             
@@ -815,24 +1347,34 @@ export default function Config() {
                     <Row gutter={16}>
                       <Col span={12}>
                         <Form.Item
-                          label="เส้นผ่านศูนย์กลาง (m)"
-                          name="stack_diameter"
-                          rules={[{ required: true, message: "กรุณาระบุเส้นผ่านศูนย์กลาง" }]}
+                          label="พื้นที่หน้าตัด (m²)"
+                          name="stack_area"
+                          rules={[{ required: true, message: "กรุณาระบุพื้นที่หน้าตัด" }]}
                         >
                           <InputNumber 
                             min={0.1} 
-                            step={0.1} 
+                            step={0.01} 
                             style={{ width: "100%" }}
-                            onChange={calculateArea}
+                            onChange={(value) => {
+                              if (value && systemForm) {
+                                // คำนวณเส้นผ่านศูนย์กลางจากพื้นที่
+                                const diameter = Math.sqrt((value * 4) / Math.PI);
+                                systemForm.setFieldValue("stack_diameter", parseFloat(diameter.toFixed(3)));
+                              }
+                            }}
                           />
                         </Form.Item>
                       </Col>
                       <Col span={12}>
                         <Form.Item
-                          label="พื้นที่ (m²)"
-                          name="stack_area"
+                          label="เส้นผ่านศูนย์กลาง (m)"
+                          name="stack_diameter"
                         >
-                          <InputNumber disabled style={{ width: "100%" }} />
+                          <InputNumber 
+                            disabled 
+                            style={{ width: "100%" }} 
+                            placeholder="คำนวณอัตโนมัติ"
+                          />
                         </Form.Item>
                       </Col>
                     </Row>
@@ -913,6 +1455,43 @@ export default function Config() {
                       </Col>
                     </Row>
                   );
+                } else if (shape === "manual_area") {
+                  return (
+                    <Row gutter={16}>
+                      <Col span={12}>
+                        <Form.Item
+                          label="พื้นที่หน้าตัด (m²)"
+                          name="stack_area"
+                          rules={[{ required: true, message: "กรุณาระบุพื้นที่หน้าตัด" }]}
+                        >
+                          <InputNumber 
+                            min={0.1} 
+                            step={0.01} 
+                            style={{ width: "100%" }} 
+                            onChange={(value) => {
+                              if (value && systemForm) {
+                                // คำนวณเส้นผ่านศูนย์กลางจากพื้นที่
+                                const diameter = Math.sqrt((value * 4) / Math.PI);
+                                systemForm.setFieldValue("stack_diameter", parseFloat(diameter.toFixed(3)));
+                              }
+                            }}
+                          />
+                        </Form.Item>
+                      </Col>
+                      <Col span={12}>
+                        <Form.Item
+                          label="เส้นผ่านศูนย์กลาง (m)"
+                          name="stack_diameter"
+                        >
+                          <InputNumber 
+                            disabled 
+                            style={{ width: "100%" }} 
+                            placeholder="คำนวณอัตโนมัติ"
+                          />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  );
                 } else {
                   return (
                     <Row gutter={16}>
@@ -940,6 +1519,8 @@ export default function Config() {
               }}
             </Form.Item>
             
+
+
             <Form.Item>
               <Space>
                 <Button
@@ -960,6 +1541,233 @@ export default function Config() {
               </Space>
             </Form.Item>
           </Form>
+        </Card>
+      ),
+    },
+    {
+      key: "gas",
+      label: (
+        <span>
+          <ExperimentOutlined />
+          การตั้งค่าแก๊ส
+        </span>
+      ),
+      children: (
+        <Card title="การตั้งค่าแก๊ส" size="small">
+          <Space direction="vertical" style={{ width: "100%" }}>
+            {gasConfigMessage && (
+              <Alert
+                message={gasConfigMessage}
+                type={gasConfigMessage.includes('Error') ? 'error' : 'success'}
+                showIcon
+                closable
+                onClose={() => setGasConfigMessage('')}
+              />
+            )}
+            
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Title level={5}>การตั้งค่าแก๊ส</Title>
+              <Space>
+                <Button
+                  icon={<ReloadOutlined />}
+                  onClick={loadGasConfig}
+                  loading={loading}
+                >
+                  โหลดใหม่
+                </Button>
+                
+              </Space>
+            </div>
+
+            <Row gutter={16}>
+              {/* Default Gases */}
+              <Col span={12}>
+                <Card title="แก๊สเริ่มต้น" size="small" style={{ marginBottom: 16 }}>
+                  <Space direction="vertical" style={{ width: "100%" }}>
+                    {gasConfig.default_gases?.map((gas) => (
+                      <Card 
+                        key={gas.name} 
+                        size="small" 
+                        style={{ 
+                          borderLeft: `4px solid ${gas.color}`,
+                          marginBottom: 8
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                          <div>
+                            <Text strong>{gas.display_name}</Text>
+                            <br />
+                            <Text type="secondary">หน่วย: {gas.unit}</Text>
+                          </div>
+                          <div>
+                            <Tag color={gas.enabled ? "green" : "default"}>
+                              {gas.enabled ? "เปิดใช้งาน" : "ปิดใช้งาน"}
+                            </Tag>
+                            <Tag color="blue">เริ่มต้น</Tag>
+                          </div>
+                        </div>
+                        
+                        <Form.Item label={`ค่าแจ้งเตือน (${gas.unit})`}>
+                          <InputNumber
+                            value={gas.alarm_threshold}
+                            onChange={(value) => updateAlarmThreshold(gas.name, value)}
+                            style={{ width: "100%" }}
+                            min={0}
+                          />
+                        </Form.Item>
+                        
+                        <Form.Item label={`ช่วงการแสดงผล (${gas.unit})`}>
+                          <Row gutter={8}>
+                            <Col span={12}>
+                              <InputNumber
+                                placeholder="ต่ำสุด"
+                                value={gas.min_value || 0}
+                                onChange={(value) => updateGasRange(gas.name, 'min_value', value)}
+                                style={{ width: "100%" }}
+                                min={0}
+                              />
+                            </Col>
+                            <Col span={12}>
+                              <InputNumber
+                                placeholder="สูงสุด"
+                                value={gas.max_value || 300}
+                                onChange={(value) => updateGasRange(gas.name, 'max_value', value)}
+                                style={{ width: "100%" }}
+                                min={0}
+                              />
+                            </Col>
+                          </Row>
+                        </Form.Item>
+                        
+                        <Button
+                          type={gas.enabled ? "default" : "primary"}
+                          size="small"
+                          onClick={() => toggleGas(gas.name, !gas.enabled)}
+                          style={{ width: "100%" }}
+                        >
+                          {gas.enabled ? "ปิดใช้งาน" : "เปิดใช้งาน"}
+                        </Button>
+                      </Card>
+                    ))}
+                  </Space>
+                </Card>
+              </Col>
+
+              {/* Additional Gases */}
+              <Col span={12}>
+                <Card title="แก๊สเพิ่มเติม" size="small" style={{ marginBottom: 16 }}>
+                  <Space direction="vertical" style={{ width: "100%" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                      <Text>แก๊สที่เพิ่มเข้ามา</Text>
+                      <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={() => setIsGasModalVisible(true)}
+                      >
+                        เพิ่มแก๊ส
+                      </Button>
+                    </div>
+                    
+                    {gasConfig.additional_gases?.length > 0 ? (
+                      gasConfig.additional_gases.map((gas) => (
+                        <Card 
+                          key={gas.name} 
+                          size="small" 
+                          style={{ 
+                            borderLeft: `4px solid ${gas.color}`,
+                            marginBottom: 8
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                            <div>
+                              <Text strong>{gas.display_name}</Text>
+                              <br />
+                              <Text type="secondary">หน่วย: {gas.unit}</Text>
+                            </div>
+                            <div>
+                              <Tag color={gas.enabled ? "green" : "default"}>
+                                {gas.enabled ? "เปิดใช้งาน" : "ปิดใช้งาน"}
+                              </Tag>
+                              <Button
+                                type="text"
+                                danger
+                                size="small"
+                                icon={<DeleteOutlined />}
+                                onClick={() => removeGas(gas.name)}
+                              >
+                                ลบ
+                              </Button>
+                            </div>
+                          </div>
+                          
+                          <Form.Item label={`ค่าแจ้งเตือน (${gas.unit})`}>
+                            <InputNumber
+                              value={gas.alarm_threshold}
+                              onChange={(value) => updateAlarmThreshold(gas.name, value)}
+                              style={{ width: "100%" }}
+                              min={0}
+                            />
+                          </Form.Item>
+                          
+                          <Form.Item label={`ช่วงการแสดงผล (${gas.unit})`}>
+                            <Row gutter={8}>
+                              <Col span={12}>
+                                <InputNumber
+                                  placeholder="ต่ำสุด"
+                                  value={gas.min_value || 0}
+                                  onChange={(value) => updateGasRange(gas.name, 'min_value', value)}
+                                  style={{ width: "100%" }}
+                                  min={0}
+                                />
+                              </Col>
+                              <Col span={12}>
+                                <InputNumber
+                                  placeholder="สูงสุด"
+                                  value={gas.max_value || 300}
+                                  onChange={(value) => updateGasRange(gas.name, 'max_value', value)}
+                                  style={{ width: "100%" }}
+                                  min={0}
+                                />
+                              </Col>
+                            </Row>
+                          </Form.Item>
+                          
+                          <Button
+                            type={gas.enabled ? "default" : "primary"}
+                            size="small"
+                            onClick={() => toggleGas(gas.name, !gas.enabled)}
+                            style={{ width: "100%" }}
+                          >
+                            {gas.enabled ? "ปิดใช้งาน" : "เปิดใช้งาน"}
+                          </Button>
+                        </Card>
+                      ))
+                    ) : (
+                      <div style={{ textAlign: "center", padding: "20px", color: "#999" }}>
+                        <Text type="secondary">ยังไม่มีแก๊สเพิ่มเติม</Text>
+                        <br />
+                        <Text type="secondary">คลิก "เพิ่มแก๊ส" เพื่อเพิ่มแก๊สใหม่</Text>
+                      </div>
+                    )}
+                  </Space>
+                </Card>
+              </Col>
+            </Row>
+
+            <Alert
+              message="คำแนะนำ"
+              description={
+                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                  <li><strong>แก๊สเริ่มต้น:</strong> แสดงบน Dashboard เสมอ</li>
+                  <li><strong>แก๊สเพิ่มเติม:</strong> สามารถเปิด/ปิดการแสดงได้</li>
+                  <li><strong>ค่าแจ้งเตือน:</strong> ตั้งค่าที่จะทำให้ระบบแจ้งเตือน</li>
+                  <li>การเปลี่ยนแปลงจะถูกบันทึกอัตโนมัติ</li>
+                </ul>
+              }
+              type="info"
+              showIcon
+            />
+          </Space>
         </Card>
       ),
     },
@@ -1005,51 +1813,245 @@ export default function Config() {
   ];
 
   return (
-    <div style={{ padding: "24px", maxWidth: "1200px", margin: "0 auto" }}>
-      <div style={{ marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0, color: "#1890ff" }}>
-          ⚙️ การตั้งค่าระบบ CEMS
-        </Title>
-        <Text type="secondary">
-          ตั้งค่าการเชื่อมต่อ การแมปข้อมูล และการทำงานของระบบ
-        </Text>
+    <div className="config-page" style={{ 
+      padding: "16px", 
+      maxWidth: "1400px", 
+      margin: "0 auto",
+      background: "#f0f0f0",
+      minHeight: "100vh"
+    }}>
+      <SystemAlertBar />
+      
+      {/* Header Section */}
+      <div style={{ 
+        marginBottom: "24px",
+        padding: "0"
+      }}>
+        <div style={{ marginBottom: "16px" }}>
+          <Title level={2} style={{ 
+            margin: 0, 
+            color: "#000",
+            fontSize: "22px",
+            fontWeight: "bold"
+          }}>
+            ระบบจัดการการตั้งค่า CEMS
+          </Title>
+          <Text style={{ 
+            fontSize: "13px", 
+            color: "#333",
+            fontWeight: "normal"
+          }}>
+            Continuous Emission Monitoring System Configuration
+          </Text>
+        </div>
+        
+        <div style={{ 
+          display: "flex", 
+          alignItems: "center", 
+          gap: "12px",
+          flexWrap: "wrap"
+        }}>
+          <div style={{
+            padding: "8px 16px",
+            background: "#e6f7ff",
+            color: "#1890ff",
+            borderRadius: "20px",
+            fontSize: "14px",
+            fontWeight: "500",
+            border: "1px solid #91d5ff"
+          }}>
+            อัปเดต: 14:00
+          </div>
+          
+          <div style={{
+            padding: "8px 16px",
+            background: "#f6ffed",
+            color: "#52c41a",
+            borderRadius: "20px",
+            fontSize: "14px",
+            fontWeight: "500",
+            border: "1px solid #b7eb8f"
+          }}>
+            Stack: Stack 1
+          </div>
+        </div>
       </div>
-
-      {/* Backend Status */}
-      <Alert
-        message={backendConnected ? "✅ Backend เชื่อมต่อได้" : "❌ Backend ไม่เชื่อมต่อ"}
-        description={
-          backendConnected
-            ? "ระบบพร้อมใช้งาน"
-            : "กรุณาตรวจสอบการเชื่อมต่อ backend"
-        }
-        type={backendConnected ? "success" : "error"}
-        showIcon
-        style={{ marginBottom: 24 }}
-      />
 
       {/* Configuration Tabs */}
       <Spin spinning={loading}>
-        <Tabs
-          activeKey={activeTab}
-          onChange={setActiveTab}
-          items={tabItems}
-          size="large"
-          style={{ background: "white", padding: 24, borderRadius: 8 }}
-        />
+        <div style={{
+          background: "white",
+          borderRadius: "16px",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.1)",
+          border: "1px solid rgba(255,255,255,0.2)",
+          overflow: "hidden"
+        }}>
+          <Tabs
+            activeKey={activeTab}
+            onChange={setActiveTab}
+            items={tabItems}
+            size="large"
+            style={{
+              padding: "0",
+              background: "transparent"
+            }}
+            tabBarStyle={{
+              margin: "0",
+              padding: "0 32px",
+              background: "white",
+              borderBottom: "1px solid #e0e0e0"
+            }}
+            tabBarGutter={0}
+          />
+        </div>
       </Spin>
+
+      {/* Gas Configuration Modal */}
+      <Modal
+        title="เพิ่มแก๊สใหม่"
+        open={isGasModalVisible}
+        onOk={() => {
+          gasForm.validateFields()
+            .then(() => {
+              addNewGas();
+            })
+            .catch((info) => {
+              console.log('Validate Failed:', info);
+            });
+        }}
+        onCancel={() => {
+          setIsGasModalVisible(false);
+          gasForm.resetFields();
+          setNewGasConfig({
+            name: '',
+            display_name: '',
+            unit: 'ppm',
+            enabled: true,
+            alarm_threshold: 50,
+
+          });
+        }}
+        width={600}
+        okText="บันทึก"
+        cancelText="ยกเลิก"
+      >
+        <Form
+          form={gasForm}
+          layout="vertical"
+          onValuesChange={(changedValues, allValues) => {
+            setNewGasConfig(allValues);
+          }}
+        >
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                label="ชื่อแก๊ส (Name)"
+                name="name"
+                rules={[
+                  { required: true, message: "กรุณาระบุชื่อแก๊ส" },
+                  { 
+                    validator: (_, value) => {
+                      if (value) {
+                        const isDuplicate = gasConfig.default_gases?.some(gas => gas.name === value) ||
+                                           gasConfig.additional_gases?.some(gas => gas.name === value);
+                        if (isDuplicate) {
+                          return Promise.reject(new Error('ชื่อแก๊สนี้มีอยู่แล้ว'));
+                        }
+                      }
+                      return Promise.resolve();
+                    }
+                  }
+                ]}
+              >
+                <Input placeholder="เช่น NH3, HCl, HF" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="ชื่อแสดง (Display Name)"
+                name="display_name"
+                rules={[{ required: true, message: "กรุณาระบุชื่อแสดง" }]}
+              >
+                <Input placeholder="เช่น NH3 (แอมโมเนีย)" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                label="หน่วย (Unit)"
+                name="unit"
+                rules={[{ required: true, message: "กรุณาเลือกหน่วย" }]}
+              >
+                <Select placeholder="เลือกหน่วย">
+                  <Option value="ppm">ppm</Option>
+                  <Option value="ppb">ppb</Option>
+                  <Option value="mg/m³">mg/m³</Option>
+                  <Option value="µg/m³">µg/m³</Option>
+                  <Option value="%">%</Option>
+                  <Option value="°C">°C</Option>
+                  <Option value="Pa">Pa</Option>
+                  <Option value="m/s">m/s</Option>
+                  <Option value="m³/h">m³/h</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="ค่าแจ้งเตือน (Alarm Threshold)"
+                name="alarm_threshold"
+                rules={[{ required: true, message: "กรุณาระบุค่าแจ้งเตือน" }]}
+              >
+                <InputNumber 
+                  min={0} 
+                  style={{ width: "100%" }} 
+                  placeholder="50"
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                label="สถานะเริ่มต้น"
+                name="enabled"
+                valuePropName="checked"
+              >
+                <Switch 
+                  checkedChildren="เปิดใช้งาน" 
+                  unCheckedChildren="ปิดใช้งาน"
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Alert
+            message="คำแนะนำ"
+            description="กรุณากรอกข้อมูลแก๊สที่ต้องการเพิ่ม โดยชื่อแก๊สควรเป็นภาษาอังกฤษและไม่มีช่องว่าง"
+            type="info"
+            showIcon
+            style={{ marginTop: 16 }}
+          />
+        </Form>
+      </Modal>
 
       {/* Device Modal */}
       <Modal
         title={editingDevice ? "แก้ไขอุปกรณ์" : "เพิ่มอุปกรณ์"}
         open={isModalVisible && modalType === "device"}
         onOk={saveDevice}
-        onCancel={() => setIsModalVisible(false)}
+        onCancel={() => {
+          console.log("🔧 Modal onCancel called");
+          setIsModalVisible(false);
+        }}
         width={600}
-        destroyOnHidden
+        destroyOnClose={false}
         maskClosable={false}
         keyboard={false}
         afterClose={() => {
+          console.log("🔧 Modal afterClose called");
           if (!editingDevice) {
             deviceForm.resetFields();
           }
@@ -1209,7 +2211,6 @@ export default function Config() {
             <Select
               placeholder={selectedDevice ? "เลือกพารามิเตอร์" : "กรุณาเลือกอุปกรณ์ก่อน"}
               onChange={handleParameterChange}
-              disabled={!selectedDevice}
               showSearch
               optionFilterProp="children"
               notFoundContent={
@@ -1329,25 +2330,381 @@ export default function Config() {
             style={{ marginTop: 16 }}
           />
           
-          <Alert
-            message="🔧 ข้อมูลเพิ่มเติม"
-            description="ระบบจะแสดงพารามิเตอร์ที่เหมาะสมกับอุปกรณ์ที่เลือก เช่น GasAnalyzer จะมี SO2, NOx, O2, CO เป็นต้น หรือ DustSensor จะมี Dust, PM2.5, PM10 เป็นต้น หรือ FlowSensor จะมี Temperature, Velocity, Pressure เป็นต้น หรือ PowerMeter จะมี Voltage, Current, Power เป็นต้น หรือ EnvironmentalMonitor จะมี Temperature, Humidity, Pressure เป็นต้น หรือ MultiParameterDevice จะมี Param1, Param2, Param3, Param4 เป็นต้น หรือ DualParameterDevice จะมี Param1, Param2 เป็นต้น หรือ SingleParameterDevice จะมี Value1 เป็นต้น หรือ Modbus RTU Device จะมี Param1, Param2 เป็นต้น หรือ Web Interface จะมี Status, Config เป็นต้น หรือ Extended Modbus จะมี Custom1, Custom2 เป็นต้น หรือ Unknown Device จะมี Param1, Param2 เป็นต้น หรือ Custom Device จะมี Param1, Param2 เป็นต้น หรือ Other Device จะมี Param1, Param2 เป็นต้น หรือ Default Device จะมี Param1, Param2 เป็นต้น หรือ Generic Device จะมี Param1, Param2 เป็นต้น หรือ Standard Device จะมี Param1, Param2 เป็นต้น หรือ Basic Device จะมี Param1, Param2 เป็นต้น หรือ Simple Device จะมี Param1, Param2 เป็นต้น"
-            type="info"
-            showIcon
-            style={{ marginTop: 8 }}
-          />
+
         </Form>
       </Modal>
 
-      {/* Footer */}
-      <div style={{
-        marginTop: 24,
-        textAlign: "center",
-        color: "#666",
-        fontSize: "0.9em"
-      }}>
-        เวอร์ชัน 1.0.1 - ระบบ CEMS Configuration
-      </div>
+      {/* Status & Alarm Modal */}
+      <Modal
+        title={editingMapping ? "แก้ไขการตั้งค่า Status/Alarm" : "เพิ่มการตั้งค่า Status/Alarm"}
+        open={isModalVisible && modalType === "status-alarm"}
+        onOk={saveMappingItem}
+        onCancel={() => {
+          setIsModalVisible(false);
+          setSelectedDevice(null);
+          setSelectedParameter(null);
+        }}
+        width={600}
+        destroyOnHidden
+        maskClosable={false}
+        keyboard={false}
+        afterClose={() => {
+          if (!editingMapping) {
+            mappingForm.resetFields();
+          }
+        }}
+      >
+        <Form
+          form={mappingForm}
+          layout="vertical"
+          autoComplete="off"
+        >
+          <Form.Item
+            label="ประเภท"
+            name="device"
+            rules={[{ required: true, message: "กรุณาเลือกประเภท" }]}
+          >
+            <Select
+              placeholder="เลือกประเภท"
+              onChange={handleDeviceChange}
+            >
+              <Option value="test4">Status Indicators</Option>
+              <Option value="test5">Alarm Signals</Option>
+            </Select>
+          </Form.Item>
+          
+          <Form.Item
+            label="ชื่อ"
+            name="name"
+            rules={[{ required: true, message: "กรุณาระบุชื่อ" }]}
+          >
+            <Select
+              placeholder="เลือกชื่อหรือพิมพ์เพื่อค้นหา"
+              showSearch
+              filterOption={(input, option) =>
+                option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
+              }
+              onChange={(value) => {
+                // อัปเดตคำอธิบายเมื่อเลือกชื่อ
+                const description = getStatusAlarmDescription(value);
+                mappingForm.setFieldValue('description', description);
+                
+                // อัปเดต Address อัตโนมัติตามชื่อที่เลือก
+                const deviceType = mappingForm.getFieldValue('device');
+                const address = getStatusAlarmAddress(value, deviceType);
+                if (address !== null) {
+                  mappingForm.setFieldValue('address', address);
+                }
+                
+                // อัปเดตค่าอื่นๆ อัตโนมัติสำหรับ Status & Alarm
+                mappingForm.setFieldValue('dataType', 'int16');
+                mappingForm.setFieldValue('dataFormat', 'Signed');
+                mappingForm.setFieldValue('registerCount', 1);
+                mappingForm.setFieldValue('addressBase', 0);
+                mappingForm.setFieldValue('unit', getStatusAlarmUnit(value));
+                mappingForm.setFieldValue('formula', 'x');
+              }}
+            >
+              {(() => {
+                // ใช้ state แทนการเรียก form.getFieldValue ใน render
+                const deviceType = selectedDevice;
+                const suggestedNames = getSuggestedNames(deviceType);
+                return suggestedNames.map(name => (
+                  <Option key={name} value={name}>
+                    {name} - {getStatusAlarmDescription(name)}
+                  </Option>
+                ));
+              })()}
+            </Select>
+          </Form.Item>
+          
+          <Form.Item
+            label="คำอธิบาย"
+            name="description"
+          >
+            <Input placeholder="คำอธิบายจะถูกเติมอัตโนมัติเมื่อเลือกชื่อ" disabled />
+          </Form.Item>
+          
+          <Form.Item
+            label="Address"
+            name="address"
+            rules={[{ required: true, message: "กรุณาระบุ Address" }]}
+          >
+            <InputNumber min={0} style={{ width: "100%" }} placeholder="0" />
+          </Form.Item>
+          
+          <Form.Item
+            label="Data Type"
+            name="dataType"
+            initialValue="int16"
+          >
+            <Select 
+              placeholder="เลือก Data Type"
+              onChange={(value) => {
+                // อัปเดต Register Count ตาม Data Type
+                if (value === 'int16') {
+                  mappingForm.setFieldValue('registerCount', 1);
+                } else if (value === 'int32' || value === 'float32') {
+                  mappingForm.setFieldValue('registerCount', 2);
+                } else if (value === 'float64') {
+                  mappingForm.setFieldValue('registerCount', 4);
+                }
+              }}
+            >
+              <Option value="int16">16-bit Integer (แนะนำสำหรับ Status/Alarm)</Option>
+              <Option value="int32">32-bit Integer</Option>
+              <Option value="float32">32-bit Float</Option>
+              <Option value="float64">64-bit Float</Option>
+            </Select>
+          </Form.Item>
+          
+          <Form.Item
+            label="Data Format"
+            name="dataFormat"
+            initialValue="Signed"
+          >
+            <Select placeholder="เลือก Data Format">
+              <Option value="Signed">Signed (0 = OFF, 1 = ON)</Option>
+              <Option value="Unsigned">Unsigned (0 = OFF, 1 = ON)</Option>
+              <Option value="Hex">Hex</Option>
+              <Option value="Binary">Binary</Option>
+              <Option value="Long AB CD">Long AB CD</Option>
+              <Option value="Long CD AB">Long CD AB</Option>
+              <Option value="Long BA DC">Long BA DC</Option>
+              <Option value="Long DC BA">Long DC BA</Option>
+              <Option value="Float AB CD">Float AB CD</Option>
+              <Option value="Float CD AB">Float CD AB</Option>
+              <Option value="Float BA DC">Float BA DC</Option>
+              <Option value="Float DC BA">Float DC BA</Option>
+              <Option value="Float AB CD EF GH">Float AB CD EF GH</Option>
+            </Select>
+          </Form.Item>
+          
+          <Form.Item
+            label="Register Count"
+            name="registerCount"
+            initialValue={1}
+          >
+            <InputNumber 
+              min={1} 
+              max={4} 
+              style={{ width: "100%" }} 
+            />
+          </Form.Item>
+          
+          <Form.Item
+            label="Address Base"
+            name="addressBase"
+            initialValue={0}
+          >
+            <InputNumber min={0} style={{ width: "100%" }} />
+          </Form.Item>
+          
+          <Form.Item
+            label="Unit"
+            name="unit"
+            initialValue=""
+          >
+            <Input placeholder="เช่น ON/OFF, 0/1, หรือว่าง" />
+          </Form.Item>
+          
+          <Form.Item
+            label="Formula"
+            name="formula"
+            initialValue="x"
+          >
+            <Input placeholder="x (ค่าดิบ), x/10, x*2" />
+          </Form.Item>
+
+          {(() => {
+            const selectedName = mappingForm.getFieldValue('name');
+            const deviceType = mappingForm.getFieldValue('device');
+            if (selectedName && deviceType) {
+              const address = getStatusAlarmAddress(selectedName, deviceType);
+              return (
+                <Alert
+                  message={`✅ การตั้งค่าอัตโนมัติ: ${selectedName}`}
+                  description={
+                    <div>
+                      <p><strong>ข้อมูลที่ถูกเซ็ตอัตโนมัติ:</strong></p>
+                      <ul style={{ margin: 0, paddingLeft: 16 }}>
+                        <li>Address: {address}</li>
+                        <li>Data Type: int16</li>
+                        <li>Data Format: Signed</li>
+                        <li>Register Count: 1</li>
+                        <li>Unit: ON/OFF</li>
+                        <li>Formula: x</li>
+                      </ul>
+                      <p style={{ marginTop: 8, marginBottom: 0 }}>
+                        <strong>หมายเหตุ:</strong> คุณสามารถแก้ไขการตั้งค่าได้ตามต้องการ
+                      </p>
+                    </div>
+                  }
+                  type="success"
+                  showIcon
+                  style={{ marginTop: 16 }}
+                />
+              );
+            }
+            return (
+              <Alert
+                message="💡 Status & Alarm Configuration"
+                description={
+                  <div>
+                    <p><strong>การตั้งค่าแนะนำ:</strong></p>
+                    <ul style={{ margin: 0, paddingLeft: 16 }}>
+                      <li>Data Type: int16 (16-bit integer) - แนะนำสำหรับ ON/OFF</li>
+                      <li>Register Count: 1 (1 register per status)</li>
+                      <li>Values: 0 = OFF, 1 = ON</li>
+                      <li>Formula: x (ใช้ค่าดิบโดยตรง)</li>
+                    </ul>
+                    <p style={{ marginTop: 8, marginBottom: 0 }}>
+                      <strong>หมายเหตุ:</strong> เลือกชื่อเพื่อให้ระบบเซ็ตค่าอัตโนมัติ
+                    </p>
+                  </div>
+                }
+                type="info"
+                showIcon
+                style={{ marginTop: 16 }}
+              />
+            );
+          })()}
+        </Form>
+      </Modal>
+
+      {/* Footer note (version badge is global in SidebarLayout) */}
+
+      {/* Enhanced Styles */}
+      <style>{`
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.5; }
+          100% { opacity: 1; }
+        }
+        
+        .config-page .ant-tabs-tab {
+          padding: 16px 24px !important;
+          font-weight: 600 !important;
+          background: #f5f5f5 !important;
+          color: #333 !important;
+          border-radius: 8px 8px 0 0 !important;
+          margin-right: 4px !important;
+          border: none !important;
+        }
+        
+        .config-page .ant-tabs-tab:hover {
+          color: #1890ff !important;
+        }
+        
+        .config-page .ant-tabs-tab-active {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+          color: white !important;
+          border-radius: 8px 8px 0 0 !important;
+          box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3) !important;
+          border: none !important;
+          font-weight: bold !important;
+          text-shadow: 0 1px 2px rgba(0,0,0,0.3) !important;
+        }
+        
+        .config-page .ant-tabs-tab-active .anticon {
+          color: white !important;
+        }
+        
+        .config-page .ant-tabs-tab .anticon {
+          color: inherit !important;
+        }
+        
+        .config-page .ant-tabs-tab-active span {
+          color: white !important;
+          font-weight: normal !important;
+        }
+        
+        .config-page .ant-card {
+          border-radius: 12px !important;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.08) !important;
+          border: 1px solid rgba(0,0,0,0.06) !important;
+        }
+        
+        .config-page .ant-card-head {
+          background: #fafafa !important;
+          border-radius: 4px 4px 0 0 !important;
+          border-bottom: 1px solid #e8e8e8 !important;
+        }
+        
+        .config-page .ant-table {
+          border-radius: 4px !important;
+          overflow: hidden !important;
+        }
+        
+        .config-page .ant-table-thead > tr > th {
+          background: #fafafa !important;
+          color: #333 !important;
+          font-weight: 600 !important;
+          border-bottom: 1px solid #e8e8e8 !important;
+        }
+        
+        .config-page .ant-btn-primary {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+          border: none !important;
+          border-radius: 8px !important;
+          font-weight: 600 !important;
+          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3) !important;
+        }
+        
+        .config-page .ant-btn-primary:hover {
+          background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%) !important;
+          transform: translateY(-1px) !important;
+          box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4) !important;
+        }
+        
+        .config-page .ant-input, .config-page .ant-input-number, .config-page .ant-select-selector {
+          border-radius: 4px !important;
+          border: 1px solid #d9d9d9 !important;
+          transition: all 0.3s ease !important;
+        }
+        
+        .config-page .ant-input:focus, .config-page .ant-input-number:focus, .config-page .ant-select-focused .ant-select-selector {
+          border-color: #1890ff !important;
+          box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2) !important;
+        }
+        
+        .config-page .ant-tag {
+          border-radius: 4px !important;
+          font-weight: normal !important;
+        }
+        
+        .config-page .ant-alert {
+          border-radius: 8px !important;
+          border: none !important;
+        }
+        
+        @media (max-width: 768px) {
+          .config-page { 
+            padding: 16px !important; 
+            max-width: 100% !important;
+          }
+          .config-page .ant-card { 
+            margin-bottom: 16px !important; 
+          }
+          .config-page .ant-tabs-tab {
+            padding: 12px 16px !important;
+            font-size: 14px !important;
+          }
+        }
+        
+        @media (max-width: 480px) {
+          .config-page { 
+            padding: 12px !important; 
+          }
+          .config-page .ant-card { 
+            margin-bottom: 12px !important; 
+          }
+          .config-page .ant-tabs-tab {
+            padding: 8px 12px !important;
+            font-size: 13px !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

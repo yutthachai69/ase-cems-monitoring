@@ -33,6 +33,7 @@ import {
   ReloadOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
+import SystemAlertBar from "../components/SystemAlertBar";
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -87,17 +88,29 @@ export default function WebPortal() {
       }
       if ((msg.type === "gas" || msg.type === "all") && msg.gas) {
         const [so2, nox, o2, co, dust, temp, velocity, flowrate, pressure] = msg.gas;
-        setGasData({
-          SO2: so2,
-          NOx: nox,
-          O2: o2,
-          CO: co,
-          Dust: dust,
-          Temperature: temp,
-          Velocity: velocity,
-          Flowrate: flowrate,
-          Pressure: pressure,
+        
+        // ตรวจสอบว่าข้อมูลเปลี่ยนจริงหรือไม่ก่อนอัปเดต
+        setGasData(prevData => {
+          const newData = {
+            SO2: so2,
+            NOx: nox,
+            O2: o2,
+            CO: co,
+            Dust: dust,
+            Temperature: temp,
+            Velocity: velocity,
+            Flowrate: flowrate,
+            Pressure: pressure,
+          };
+          
+          // ตรวจสอบการเปลี่ยนแปลง
+          const hasChanged = Object.keys(newData).some(key => 
+            prevData[key] !== newData[key]
+          );
+          
+          return hasChanged ? newData : prevData;
         });
+        
         setLastUpdated(dayjs().format("YYYY-MM-DD HH:mm:ss"));
       }
     };
@@ -111,7 +124,11 @@ export default function WebPortal() {
         setModbusStatus(msg.connection_status);
       }
       if (msg.type === "status" && msg.values) {
-        setStatusData(msg.values);
+        // ตรวจสอบว่าข้อมูลเปลี่ยนจริงหรือไม่ก่อนอัปเดต
+        setStatusData(prevData => {
+          const hasChanged = !prevData || JSON.stringify(prevData) !== JSON.stringify(msg.values);
+          return hasChanged ? msg.values : prevData;
+        });
       }
     };
 
@@ -174,6 +191,24 @@ export default function WebPortal() {
 
   const renderDashboardCard = (title, value, unit, icon, paramKey) => {
     const color = getThresholdColor(paramKey, value);
+    
+    // แปลงตัวเลขให้แสดงแบบย่อ
+    const formatValue = (val) => {
+      if (val === "--" || val === null || val === undefined) return "--";
+      const num = parseFloat(val);
+      if (isNaN(num)) return val;
+      
+      if (num > 999999999) {
+        return `${(num / 1000000000).toFixed(1)}B`;
+      } else if (num > 999999) {
+        return `${(num / 1000000).toFixed(1)}M`;
+      } else if (num > 999) {
+        return `${(num / 1000).toFixed(1)}K`;
+      } else {
+        return num.toLocaleString();
+      }
+    };
+    
     return (
       <Col xs={24} sm={12} md={8} lg={6} key={title}>
         <Card
@@ -184,12 +219,14 @@ export default function WebPortal() {
             boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)",
           }}
         >
-          <Statistic
-            title={<Space>{icon}<span>{title}</span></Space>}
-            value={value}
-            suffix={unit}
-            valueStyle={{ color }}
-          />
+          <Tooltip title={`${value}${unit}`}>
+            <Statistic
+              title={<Space>{icon}<span>{title}</span></Space>}
+              value={formatValue(value)}
+              suffix={unit}
+              valueStyle={{ color }}
+            />
+          </Tooltip>
         </Card>
       </Col>
     );
@@ -269,17 +306,7 @@ export default function WebPortal() {
 
   return (
     <div style={{ padding: 24, backgroundColor: "#f5f5f5", minHeight: "100vh" }}>
-      {/* แจ้งเตือนสถานะ Modbus */}
-      {modbusStatus === "error" && (
-        <div style={{ background: '#fff2f0', color: '#cf1322', padding: 12, textAlign: 'center', fontWeight: 600 }}>
-          ❌ ไม่สามารถเชื่อมต่อกับ Modbus ได้ กรุณาตรวจสอบการตั้งค่า/สายสัญญาณ
-        </div>
-      )}
-      {modbusStatus === "connected" && (
-        <div style={{ background: '#f6ffed', color: '#389e0d', padding: 12, textAlign: 'center', fontWeight: 600 }}>
-          ✅ เชื่อมต่อกับ Modbus สำเร็จ
-        </div>
-      )}
+      <SystemAlertBar />
       <Spin spinning={loading}>
         <div style={{ marginBottom: 24 }}>
           <Title level={2}><GlobalOutlined style={{ marginRight: 8 }} />CEMS Management Portal</Title>
