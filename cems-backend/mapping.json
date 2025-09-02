@@ -86,5 +86,65 @@
     "addressBase": 0,
     "unit": "Pa",
     "formula": "x"
+  },
+  {
+    "device": "test4",
+    "name": "Temperature Controller Alarm",
+    "description": "แจ้งเตือนตัวควบคุมอุณหภูมิ",
+    "address": 0,
+    "dataType": "int16",
+    "dataFormat": "Signed",
+    "registerCount": 1,
+    "addressBase": 0,
+    "unit": "ON/OFF",
+    "formula": "x"
+  },
+  {
+    "device": "test4",
+    "name": "Analyzer Malfunction",
+    "description": "เครื่องวิเคราะห์ทำงานผิดปกติ",
+    "address": 1,
+    "dataType": "int16",
+    "dataFormat": "Signed",
+    "registerCount": 1,
+    "addressBase": 0,
+    "unit": "ON/OFF",
+    "formula": "x"
+  },
+  {
+    "device": "test4",
+    "name": "Sample Probe Alarm",
+    "description": "แจ้งเตือน probe สุ่มตัวอย่าง",
+    "address": 2,
+    "dataType": "int16",
+    "dataFormat": "Signed",
+    "registerCount": 1,
+    "addressBase": 0,
+    "unit": "ON/OFF",
+    "formula": "x"
+  },
+  {
+    "device": "test4",
+    "name": "Alarm Light",
+    "description": "ไฟแจ้งเตือน",
+    "address": 3,
+    "dataType": "int16",
+    "dataFormat": "Signed",
+    "registerCount": 1,
+    "addressBase": 0,
+    "unit": "ON/OFF",
+    "formula": "x"
+  },
+  {
+    "device": "test5",
+    "name": "Maintenance Mode",
+    "description": "โหมดบำรุงรักษา",
+    "address": 0,
+    "dataType": "int16",
+    "dataFormat": "Signed",
+    "registerCount": 1,
+    "addressBase": 0,
+    "unit": "ON/OFF",
+    "formula": "x"
   }
 ]

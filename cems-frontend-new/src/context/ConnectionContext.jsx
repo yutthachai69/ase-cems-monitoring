@@ -17,6 +17,18 @@ export const ConnectionProvider = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+  // แชร์ชุดพารามิเตอร์ที่ต้องการแสดงผลตาม config
+  const [visibleParams, setVisibleParams] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("ui.visibleParams") || "null");
+      return Array.isArray(saved) ? saved : ["SO2","NOx","O2","CO","Dust","Temperature","Velocity","Flowrate","Pressure"];
+    } catch {
+      return ["SO2","NOx","O2","CO","Dust","Temperature","Velocity","Flowrate","Pressure"];
+    }
+  });
+  const [syncWithConfig, setSyncWithConfig] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ui.syncWithConfig") || "true"); } catch { return true; }
+  });
   const [gasData, setGasData] = useState({
     SO2: 0, NOx: 0, O2: 0, CO: 0, Dust: 0,
     Temperature: 0, Velocity: 0, Flowrate: 0, Pressure: 0,
@@ -192,9 +204,51 @@ export const ConnectionProvider = ({ children }) => {
     }, 500);
   };
 
+  // โหลด config เพื่อกำหนด visibleParams เริ่มต้นจาก backend
+  const loadVisibleParamsFromConfig = async () => {
+    try {
+      const baseUrl = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
+      const res = await fetch(`${baseUrl}/config/gas`);
+      if (!res.ok) return;
+      const cfg = await res.json();
+      const enabledGasNames = [];
+      const pushEnabled = (arr) => (arr || []).forEach((g) => { if (g?.enabled) enabledGasNames.push(g.name || g.key || g.display_name); });
+      pushEnabled(cfg.default_gases);
+      pushEnabled(cfg.additional_gases);
+      // ทำ normalization ให้ตรง key ที่หน้าอื่นใช้
+      const normalize = (name) => {
+        if (!name) return null;
+        const n = String(name).replace(/[^A-Za-z0-9]/g, "");
+        const map = { SO2: "SO2", NOx: "NOx", O2: "O2", CO: "CO", Dust: "Dust" };
+        return map[n] || map[name] || name;
+      };
+      const gasKeys = Array.from(new Set(enabledGasNames.map(normalize))).filter(Boolean);
+      // รวมพารามิเตอร์อื่นๆ ที่ไม่มีใน config ไว้ท้ายรายการ (ยังแสดงค่าได้)
+      const others = ["Temperature","Velocity","Flowrate","Pressure"]; 
+      const next = [...gasKeys, ...others];
+      if (syncWithConfig) {
+        setVisibleParams(next);
+      }
+      localStorage.setItem("ui.visibleParams", JSON.stringify(next));
+    } catch (e) {
+      // เงียบไว้ ถ้าโหลดไม่ได้จะใช้ค่าที่มีอยู่
+    }
+  };
+
+  // ติดตามค่าซิงก์และบันทึกไว้
+  useEffect(() => {
+    localStorage.setItem("ui.syncWithConfig", JSON.stringify(syncWithConfig));
+  }, [syncWithConfig]);
+
+  useEffect(() => {
+    localStorage.setItem("ui.visibleParams", JSON.stringify(visibleParams));
+  }, [visibleParams]);
+
   useEffect(() => {
     // เชื่อมต่อครั้งแรก
     const timer = setTimeout(connectWebSockets, 1000);
+    // โหลด config ครั้งแรก
+    loadVisibleParamsFromConfig();
     
     return () => {
       clearTimeout(timer);
@@ -208,6 +262,11 @@ export const ConnectionProvider = ({ children }) => {
     isConnected,
     connectionError,
     lastUpdated,
+    // แชร์ค่าที่เกี่ยวกับการซิงก์พารามิเตอร์
+    visibleParams,
+    setVisibleParams,
+    syncWithConfig,
+    setSyncWithConfig,
     gasData,
     alarmValues,
     connectWebSockets,

@@ -16,3 +16,6 @@ services:
     volumes:
       - influxdb_data:/var/lib/influxdb2
     restart: unless-stopped 
+
+volumes:
+  influxdb_data:

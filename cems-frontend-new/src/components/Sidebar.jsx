@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Layout, Menu, Typography, Tooltip } from "antd";
+import { Layout, Menu, Typography, Tooltip, Button } from "antd";
 import {
   HomeOutlined,
   DashboardOutlined,
@@ -15,23 +15,26 @@ import {
 // ✅ นำไฟล์ไปไว้ที่ src/assets/
 import AseLogo from "../assets/Ase_logo.png";
 import AseSmallLogo from "../assets/Ase.png";
+import { useAuth } from "../context/AuthContext.jsx";
 
 const { Sider } = Layout;
 const { Text } = Typography;
 
 const Sidebar = ({ collapsed, setCollapsed }) => {
   const location = useLocation();
+  const { role, logout } = useAuth();
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
 
   useEffect(() => {
     const updateClock = () => {
       const now = new Date();
-      // แปลงเป็นปี พ.ศ.
+      // รูปแบบเดิม: dd/mm/พ.ศ.
       const thaiYear = now.getFullYear() + 543;
       const thaiDate = `${now.getDate()}/${now.getMonth() + 1}/${thaiYear}`;
+      const thaiTime = now.toLocaleTimeString("th-TH", { hour12: false });
       setDate(thaiDate);
-      setTime(now.toLocaleTimeString("th-TH", { hour12: false }));
+      setTime(thaiTime);
     };
     updateClock();
     const interval = setInterval(updateClock, 1000);
@@ -52,26 +55,23 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
     </style>
   );
 
-  const menuItems = [
-    { key: "/", icon: <HomeOutlined />, label: <Link to="/">HOME</Link> },
-    { key: "/status", icon: <DashboardOutlined />, label: <Link to="/status">STATUS</Link> },
-    { key: "/logs", icon: <FileTextOutlined />, label: <Link to="/logs">DATA LOGS</Link> },
-    { key: "/graph", icon: <LineChartOutlined />, label: <Link to="/graph">GRAPH</Link> },
-    { 
-      key: "/blowback", 
-      icon: (
+  const baseItems = [
+    { key: "/", icon: <HomeOutlined />, label: <Link to="/">HOME</Link>, roles: ["admin","user"] },
+    { key: "/status", icon: <DashboardOutlined />, label: <Link to="/status">STATUS</Link>, roles: ["admin","user"] },
+    { key: "/logs", icon: <FileTextOutlined />, label: <Link to="/logs">DATA LOGS</Link>, roles: ["admin","user"] },
+    { key: "/graph", icon: <LineChartOutlined />, label: <Link to="/graph">GRAPH</Link>, roles: ["admin","user"] },
+    { key: "/blowback", icon: (
         <Tooltip title="🚧 To Be Continue..." placement="right">
           <SyncOutlined className="spin-hover" />
         </Tooltip>
-      ), 
-      label: (
+      ), label: (
         <Tooltip title="🚧 To Be Continue..." placement="right">
           <Link to="/blowback">BLOWBACK</Link>
         </Tooltip>
-      ) 
-    },
-    { key: "/config", icon: <SettingOutlined />, label: <Link to="/config">CONFIG</Link> },
+      ), roles: ["admin"] },
+    { key: "/config", icon: <SettingOutlined />, label: <Link to="/config">CONFIG</Link>, roles: ["admin"] },
   ];
+  const menuItems = baseItems.filter(item => !item.roles || (role && item.roles.includes(role)));
 
   return (
     <Sider
@@ -107,10 +107,10 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
               <div style={{ fontWeight: "bold", fontSize: 13, marginTop: 4 }}>
                 TEST <br /> PRODUCTS
               </div>
-              <hr style={{ margin: "8px 0", borderColor: "#2c3e50" }} />
-              <Text style={{ fontSize: 12, color: "#f0f0f0" }}>{date}</Text>
+              <hr style={{ margin: "8px 0", borderColor: "#203040" }} />
+              <Text style={{ fontSize: 13, color: "rgba(255,255,255,0.92)", fontWeight: 700, letterSpacing: .2 }}>{date}</Text>
               <br />
-              <Text style={{ fontSize: 12, color: "#f0f0f0" }}>{time}</Text>
+              <Text style={{ fontSize: 18, color: "#ffffff", fontWeight: 800, fontVariantNumeric: "tabular-nums", textShadow: "0 1px 3px rgba(0,0,0,.55)" }}>{time}</Text>
               <hr style={{ marginTop: 8, borderColor: "#2c3e50" }} />
             </>
           )}
@@ -141,8 +141,8 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
           }}
         >
           {/* Web Portal Button */}
-          <div style={{ marginBottom: 16 }}>
-            <Link to="/portal">
+          <div style={{ marginBottom: 8 }}>
+            <a href="https://www.youtube.com/" target="_blank" rel="noopener noreferrer">
               <button
                 style={{
                   width: "100%",
@@ -171,8 +171,9 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
                 <GlobalOutlined />
                 {!collapsed && "WEB PORTAL"}
               </button>
-            </Link>
+            </a>
           </div>
+          {/* Login/Logout moved to TopBarUser */}
           
           <img
             src={AseSmallLogo}

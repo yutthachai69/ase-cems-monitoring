@@ -2,6 +2,9 @@
 class ApiService {
   constructor() {
     this.backendUrl = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
+    this.getAuth = () => {
+      try { return JSON.parse(localStorage.getItem('auth')) || {}; } catch { return {}; }
+    };
   }
 
   // Generic fetch method
@@ -13,6 +16,11 @@ class ApiService {
         ...options.headers
       }
     };
+
+    const { token } = this.getAuth();
+    if (token) {
+      defaultOptions.headers['Authorization'] = `Bearer ${token}`;
+    }
 
     try {
       const response = await fetch(url, { ...defaultOptions, ...options });

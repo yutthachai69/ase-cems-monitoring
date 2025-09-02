@@ -6,12 +6,14 @@
         "mode": "tcp",
         "ip": "127.0.0.1",
         "port": 502,
+        "strictPorts": true,
         "slaveId": 1,
         "registerType": "holding"
       },
       {
         "name": "test2",
         "mode": "tcp",
+        "strictPorts": true,
         "slaveId": 1,
         "registerType": "holding",
         "ip": "127.0.0.1",
@@ -20,8 +22,27 @@
       {
         "name": "test3",
         "mode": "tcp",
+        "strictPorts": true,
         "ip": "127.0.0.1",
         "port": 504,
+        "slaveId": 1,
+        "registerType": "holding"
+      },
+            {
+        "name": "test4",
+        "mode": "tcp",
+        "ip": "127.0.0.1",
+        "port": 505,
+        "strictPorts": true,
+        "slaveId": 1,
+        "registerType": "holding"
+      },
+      {
+        "name": "test5",
+        "mode": "tcp",
+        "ip": "127.0.0.1",
+        "port": 506,
+        "strictPorts": true,
         "slaveId": 1,
         "registerType": "holding"
       }
@@ -32,80 +53,70 @@
       "Velocity": 30
     },
     "log_interval": 60,
-    "reconnect_interval": 1,
-    "default_ports": [
-      502,
-      503,
-      504,
-      1502,
-      2404,
-      8502,
-      10502
-    ]
+    "reconnect_interval": 5
   },
   "stack_info": {
-    "area": 40,
-    "diameter": 7.136
+    "area": 27,
+    "diameter": 5.863
+  },
+  "influxdb": {
+    "url": "http://127.0.0.1:8086",
+    "org": "CEMS",
+    "bucket": "cems_data",
+    "agg_bucket": "cems_1m",
+    "token": "cems-admin-token-123456"
+  },
+  "auth": {
+    "users": {
+      "admin": {
+        "role": "admin",
+        "password_hash": "$2b$12$zL6eBPgUksI0B82HS7.fHePikWkCXIUqreRxBE5GiBK.0Ff0sHT16"
+      },
+      "user": {
+        "role": "user",
+        "password_hash": null
+      }
+    }
   },
   "gas_config": {
     "default_gases": [
       {
         "name": "SO2",
-        "display_name": "SO2",
+        "display_name": "SO₂",
         "unit": "ppm",
         "enabled": true,
-        "alarm_threshold": 200,
-        "min_value": 0,
-        "max_value": 300,
-        "color": "#ff6b6b"
+        "alarm_threshold": 200
       },
       {
         "name": "NOx",
         "display_name": "NOx",
         "unit": "ppm",
         "enabled": true,
-        "alarm_threshold": 100,
-        "min_value": 0,
-        "max_value": 300,
-        "color": "#4ecdc4"
+        "alarm_threshold": 300
       },
       {
         "name": "O2",
-        "display_name": "O2",
+        "display_name": "O₂",
         "unit": "%",
         "enabled": true,
-        "alarm_threshold": 25,
-        "min_value": 0,
-        "max_value": 25,
-        "color": "#45b7d1"
+        "alarm_threshold": null
       },
       {
         "name": "CO",
         "display_name": "CO",
         "unit": "ppm",
         "enabled": true,
-        "alarm_threshold": 100,
-        "min_value": 0,
-        "max_value": 300,
-        "color": "#96ceb4"
-      },
+        "alarm_threshold": 100
+      }
+    ],
+    "additional_gases": [
       {
         "name": "Dust",
         "display_name": "Dust",
         "unit": "mg/m³",
-        "enabled": true,
-        "alarm_threshold": 50,
-        "min_value": 0,
-        "max_value": 100,
-        "color": "#feca57"
+        "alarm_threshold": 100,
+        "enabled": true
       }
-    ],
-    "additional_gases": []
-  },
-  "influxdb": {
-    "url": "http://localhost:8086",
-    "token": "cems-admin-token-123456",
-    "org": "CEMS",
-    "bucket": "cems_data"
+    ]
   }
 }

@@ -7,27 +7,14 @@ import wsManager from "../config/websocketManager";
 import {
   ExperimentOutlined, DashboardOutlined, FireOutlined, CloudOutlined,
   ThunderboltOutlined, ReloadOutlined, WarningOutlined, RocketOutlined,
+  BarChartOutlined, EnvironmentOutlined, CompressOutlined,
 } from "@ant-design/icons";
 import { CEMS_THEME } from "../assets/theme";
 import "../App.css";
 import SystemAlertBar from "../components/SystemAlertBar";
+import { CONFIG } from "../config/config";
 
-// เพิ่ม CSS animation สำหรับสถานะการเชื่อมต่อ
-const connectionStyles = `
-  @keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.5; }
-    100% { opacity: 1; }
-  }
-`;
 
-// เพิ่ม style tag สำหรับ animation
-if (!document.getElementById('connection-animation')) {
-  const style = document.createElement('style');
-  style.id = 'connection-animation';
-  style.textContent = connectionStyles;
-  document.head.appendChild(style);
-}
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -49,11 +36,18 @@ export default function Home() {
   const [connectionError, setConnectionError] = useState(false);
   const [alarmValues, setAlarmValues] = useState([false, false, false, false]);
   const [lastUpdatedHour, setLastUpdatedHour] = useState(null);
-  const [isConnected, setIsConnected] = useState(false); // เพิ่ม state ตรวจสอบการเชื่อมต่อ
-  const [dbData, setDbData] = useState(null); // เพิ่ม state สำหรับข้อมูลจากฐานข้อมูล
+  const [isConnected, setIsConnected] = useState(false);
+  const [dbData, setDbData] = useState(null);
   const [gasConfig, setGasConfig] = useState({
-    default_gases: [],
-    additional_gases: []
+    default_gases: [
+      { name: "SO2", display_name: "SO₂", unit: "ppm", enabled: true, alarm_threshold: 200 },
+      { name: "NOx", display_name: "NOx", unit: "ppm", enabled: true, alarm_threshold: 300 },
+      { name: "O2", display_name: "O₂", unit: "%", enabled: true, alarm_threshold: null },
+      { name: "CO", display_name: "CO", unit: "ppm", enabled: true, alarm_threshold: 100 }
+    ],
+    additional_gases: [
+      { name: "Dust", display_name: "Dust", unit: "mg/m³", enabled: true, alarm_threshold: 100 }
+    ]
   });
 
 
@@ -124,9 +118,9 @@ export default function Home() {
     // เพิ่มพารามิเตอร์อื่นๆ (ไม่ใช่แก๊ส)
     const nonGasItems = [
       { label: "Temperature", unit: "°C", icon: <FireOutlined />, desc: "Temperature" },
-      { label: "Velocity", unit: "m/s", icon: <RocketOutlined />, desc: "Gas Velocity" },
-      { label: "Flowrate", unit: "m³/h", icon: <ThunderboltOutlined />, desc: "Gas Flow Rate" },
-      { label: "Pressure", unit: "Pa", icon: <DashboardOutlined />, desc: "Gas Pressure" }
+      { label: "Velocity", unit: "m/s", icon: <ThunderboltOutlined />, desc: "Gas Velocity" },
+      { label: "Flowrate", unit: "m³/h", icon: <BarChartOutlined />, desc: "Gas Flow Rate" },
+      { label: "Pressure", unit: "Pa", icon: <CompressOutlined />, desc: "Gas Pressure" }
     ];
     
     items.push(...nonGasItems);
@@ -139,7 +133,7 @@ export default function Home() {
 
   const correctedItems = [
     { label: "SO₂", unit: "ppm", icon: <CloudOutlined />, desc: "Corrected SO₂" },
-    { label: "NOx", unit: "ppm", icon: <FireOutlined />, desc: "Corrected NOx" },
+    { label: "NOx", unit: "ppm", icon: <CloudOutlined />, desc: "Corrected NOx" },
     { label: "CO", unit: "ppm", icon: <CloudOutlined />, desc: "Corrected CO" },
     { label: "Dust", unit: "mg/m³", icon: <ExperimentOutlined />, desc: "Corrected Dust" }
   ];
@@ -235,27 +229,12 @@ export default function Home() {
         setConnectionError(false);
         setIsConnected(true);
         
-        // ส่งสถานะไปยัง window object สำหรับ SystemAlertBar
-        window.cemsStatus = {
-          connection_status: msg.connection_status || "connected",
-          has_real_data: msg.has_real_data || false
-        };
       },
       () => {
         setConnectionError(true);
-        // ส่งสถานะ error ไปยัง window object
-        window.cemsStatus = {
-          connection_status: "error",
-          has_real_data: false
-        };
       },
       () => {
         setIsConnected(false);
-        // ส่งสถานะ error ไปยัง window object
-        window.cemsStatus = {
-          connection_status: "error",
-          has_real_data: false
-        };
       }
     );
   };
@@ -363,7 +342,7 @@ export default function Home() {
       if (value > 21) return "#ff4d4f";        // 🔴 ผิดปกติแน่ (เกิน 21%)
       if (value > 15) return "#fa8c16";        // 🟡 สูงผิดปกติ (15-21%)
       if (value < 3) return "#ff4d4f";         // 🔴 ต่ำเกิน (น้อยกว่า 3%)
-      if (value >= 6 && value <= 15) return "#52c41a"; // 🟢 ปกติ (6-15%)
+      if (value >= 6 && value <= 15) return THEME_COLOR; // 🔵 ปกติ (6-15%)
       return "#fa8c16";                        // 🟡 ต่ำ (3-6%)
     };
 
@@ -376,24 +355,38 @@ export default function Home() {
     // ✅ กำหนดสีตามค่าและระดับความรุนแรง
     let cardColor = THEME_COLOR;
     
+    // ตรวจสอบ parameter threshold (Temperature, Pressure, Velocity)
+    const getParameterThreshold = (paramName) => {
+      const thresholds = {
+        "Temperature": 80,
+        "Pressure": 1000,
+        "Velocity": 30
+      };
+      return thresholds[paramName];
+    };
+    
+    const parameterThreshold = getParameterThreshold(item.label);
+    const isParameterOverLimit = typeof value === "number" && parameterThreshold && value > parameterThreshold;
+    
     if (isAlarmActive) {
       cardColor = CEMS_THEME.warning;
     } else if (isFlowrateAbnormal) {
       cardColor = CEMS_THEME.danger;
     } else if (item.label === "O₂") {
       cardColor = getO2Color(value);
-    } else if (isOverLimit) {
+    } else if (isOverLimit || isParameterOverLimit) {
       cardColor = CEMS_THEME.danger; // แดงเมื่อเกินค่าแจ้งเตือน
-    } else if (typeof value === "number" && alarmThreshold) {
-      // สีส้มเมื่อเข้าใกล้ค่าแจ้งเตือน (80% ของค่าแจ้งเตือน)
-      const warningThreshold = alarmThreshold * 0.8;
+    } else if (typeof value === "number" && (alarmThreshold || parameterThreshold)) {
+      // สีเหลืองเมื่อเข้าใกล้ค่าแจ้งเตือน (80% ของค่าแจ้งเตือน)
+      const threshold = alarmThreshold || parameterThreshold;
+      const warningThreshold = threshold * 0.8;
       if (value >= warningThreshold) {
         cardColor = CEMS_THEME.warning;
       } else {
-        cardColor = THEME_COLOR; // สีปกติ
+        cardColor = THEME_COLOR; // สีน้ำเงินปกติ
       }
     } else {
-      cardColor = THEME_COLOR;
+      cardColor = THEME_COLOR; // สีน้ำเงินปกติ
     }
 
     return (
@@ -402,26 +395,66 @@ export default function Home() {
           hoverable
           size="small"
           style={{
-            borderLeft: `6px solid ${cardColor}`,
-            borderRadius: 16,
+            borderLeft: `3px solid ${cardColor}`,
+            borderRadius: "2px",
             textAlign: "center",
-            height: 120,
-            backgroundColor: isAlarmActive ? "#fffbe7" : isOverLimit ? "#fff0f0" : "white",
-            boxShadow: isAlarmActive ? "0 2px 16px 0 #ffd60033" : undefined,
+            height: "140px",
+            backgroundColor: "white",
+            boxShadow: "none",
+            borderTop: "1px solid #ccc",
+            borderRight: "1px solid #ccc",
+            borderBottom: "1px solid #ccc",
+            transition: "none",
+            position: "relative",
+            overflow: "visible"
           }}
+
         >
           {(isOverLimit || isAlarmActive || isFlowrateAbnormal || (item.label === "O₂" && typeof value === "number" && (value > 21 || value < 3))) && (
-            <WarningOutlined style={{ color: cardColor, position: "absolute", top: 8, left: 10, fontSize: 20 }} />
+            <div style={{
+              position: "absolute",
+              top: "4px",
+              right: "4px",
+              background: "#ff4d4f",
+              color: "white",
+              borderRadius: "1px",
+              padding: "1px 4px",
+              fontSize: "9px",
+              fontWeight: "normal"
+            }}>
+              ALARM
+            </div>
           )}
+          
           <Tooltip title={item.desc}>
-            <div style={{ fontSize: 13, color: THEME_COLOR }}>{item.icon} {item.label}</div>
+            <div style={{ 
+              fontSize: "14px", 
+              color: "#000",
+              fontWeight: "bold",
+              marginBottom: "8px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "6px"
+            }}>
+              <span style={{ 
+                color: cardColor,
+                fontSize: "14px",
+                display: "flex",
+                alignItems: "center"
+              }}>
+                {item.icon}
+              </span>
+              {item.label}
+            </div>
           </Tooltip>
+          
           <Tooltip title={typeof value === "number" ? value.toLocaleString() : value}>
             <div style={{ 
-              fontSize: 26, 
-              fontWeight: 700, 
+              fontSize: "26px", 
+              fontWeight: "bold", 
               color: cardColor, 
-              margin: "6px 0",
+              margin: "8px 0",
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -439,119 +472,248 @@ export default function Home() {
                 ) : value}
             </div>
           </Tooltip>
-          <Text type="secondary" style={{ fontSize: 12 }}>{item.unit}</Text>
+          
+          <Text style={{ 
+            fontSize: "14px",
+            color: "#666",
+            fontWeight: "normal",
+            textAlign: "center",
+            display: "block",
+            marginTop: "4px"
+          }}>
+            {item.label === "SO2" || item.label === "NOx" || item.label === "CO" ? "ppm" :
+             item.label === "O2" ? "%" :
+             item.label === "Dust" ? "mg/m³" :
+             item.label === "Temperature" ? "°C" :
+             item.label === "Velocity" ? "m/s" :
+             item.label === "Flowrate" ? "m³/h" :
+             item.label === "Pressure" ? "Pa" :
+             item.unit || "N/A"}
+          </Text>
         </Card>
       </Col>
     );
   };
 
-  return (
-    <div style={{ position: "relative", minHeight: "100vh", background: CEMS_THEME.background }}>
-      <SystemAlertBar />
-      <Spin spinning={loading} tip="กำลังโหลดข้อมูล...">
-        <div className="cems-section" style={{ padding: 32 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <Title level={4} style={{ color: THEME_COLOR, marginBottom: 0 }}>Stack Value Monitoring Dashboard</Title>
-            <Space direction="vertical" size={4} align="end">
-              {alarmValues.some(a => a) && (
-                <div style={{ display: "flex", alignItems: "center" }}>
-                  <span className="cems-alarm-badge">
-                    <WarningOutlined style={{ marginRight: 4 }} />
-                    Alarm {alarmValues.filter(a => a).length}
-                  </span>
-                  <span style={{ fontSize: 12, color: CEMS_THEME.text, marginLeft: 8 }}>
-                    {alarmValues.map((a, i) => a ? alarmItems[i] : null).filter(Boolean).join(", ")}
-                  </span>
-                </div>
-              )}
+    return (
+    <div style={{ 
+      position: "relative", 
+      minHeight: "100vh", 
+      background: "#f0f0f0"
+    }}>
+      <div className="cems-section" style={{ padding: "16px", maxWidth: "1400px", margin: "0 auto" }}>
+        
+                {/* Header Section */}
+        <div style={{ 
+          marginBottom: "24px",
+          padding: "0"
+        }}>
+          <div style={{ marginBottom: "16px" }}>
+            <Title level={2} style={{ 
+              margin: 0, 
+              color: "#000",
+              fontSize: "22px",
+              fontWeight: "bold"
+            }}>
+              ระบบติดตามการปล่อยมลพิษ
+            </Title>
+            <Text style={{ 
+              fontSize: "13px", 
+              color: "#333",
+              fontWeight: "normal"
+            }}>
+              Continuous Emission Monitoring System
+            </Text>
+          </div>
+            
+                      <div style={{ 
+            display: "flex", 
+            alignItems: "center", 
+            gap: "12px",
+            flexWrap: "wrap"
+          }}>
+            <div style={{
+              padding: "8px 16px",
+              background: "#52c41a",
+              color: "white",
+              borderRadius: "20px",
+              fontSize: "14px",
+              fontWeight: "500",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px"
+            }}>
+              <div style={{
+                width: "8px",
+                height: "8px",
+                background: "white",
+                borderRadius: "50%"
+              }}></div>
+              ระบบเชื่อมต่อสำเร็จ
+            </div>
+            
+            <div style={{
+              padding: "8px 16px",
+              background: "#f5f5f5",
+              color: "#333",
+              borderRadius: "20px",
+              fontSize: "14px",
+              fontWeight: "500",
+              border: "1px solid #d9d9d9"
+            }}>
+              อัปเดต: {lastUpdated || "กำลังโหลด..."}
+            </div>
+            
+            <div style={{
+              padding: "8px 16px",
+              background: "#f5f5f5",
+              color: "#333",
+              borderRadius: "20px",
+              fontSize: "14px",
+              fontWeight: "500",
+              border: "1px solid #d9d9d9"
+            }}>
+              Stack: {stack}
+            </div>
+            
+            {alarmValues.some(a => a) && (
+              <div style={{
+                padding: "8px 16px",
+                background: "#ff4d4f",
+                color: "white",
+                borderRadius: "20px",
+                fontSize: "14px",
+                fontWeight: "500",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px"
+              }}>
+                <div style={{
+                  width: "0",
+                  height: "0",
+                  borderLeft: "6px solid transparent",
+                  borderRight: "6px solid transparent",
+                  borderBottom: "10px solid white",
+                  marginRight: "4px"
+                }}></div>
+                Alarm: {alarmValues.filter(a => a).length}
+              </div>
+            )}
+          </div>
+            
+            <div style={{ 
+              display: "flex", 
+              justifyContent: "space-between", 
+              alignItems: "center",
+              marginTop: "16px"
+            }}>
               <Space>
-                <Select value={stack} onChange={setStack} style={{ width: 160 }}>
-                  {stackOptions.map(s => <Option key={s} value={s}>{s}</Option>)}
-                </Select>
-                <Button
-                  icon={<ReloadOutlined />}
-                  onClick={() => {
-                    // ตรวจสอบว่ากำลังเชื่อมต่ออยู่หรือไม่
-                    if (isConnected && !loading) {
-                      setLoading(true);
-                      // ปิดการเชื่อมต่อปัจจุบัน
-                      wsManager.disconnect('/ws/gas');
-                      wsManager.disconnect('/ws/status');
-                      // รีเซ็ตสถานะ
-                      setIsConnected(false);
-                      setConnectionError(false);
-                      // เชื่อมต่อใหม่
-                      setTimeout(() => {
-                        connectGasWebSocket();
-                        connectStatusWebSocket();
-                        setLoading(false);
-                      }, 500);
-                    } else if (!isConnected) {
-                      // ถ้าไม่ได้เชื่อมต่อ ให้เชื่อมต่อใหม่
-                      setLoading(true);
-                      connectGasWebSocket();
-                      connectStatusWebSocket();
-                      setTimeout(() => setLoading(false), 1000);
-                    }
-                  }}
-                  loading={loading}
-                  className="cems-btn-warning"
-                  style={{
-                    backgroundColor: isConnected ? CEMS_THEME.success : CEMS_THEME.warning,
-                    borderColor: isConnected ? CEMS_THEME.success : CEMS_THEME.warning,
-                    color: 'white'
+                <Select 
+                  value={stack} 
+                  onChange={setStack} 
+                  style={{ 
+                    width: 160,
+                    borderRadius: "8px"
                   }}
                 >
-                  {isConnected ? 'Connected' : 'Refresh'}
-                </Button>
+                  {stackOptions.map(s => <Option key={s} value={s}>{s}</Option>)}
+                </Select>
               </Space>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  backgroundColor: isConnected ? CEMS_THEME.success : CEMS_THEME.danger,
-                  animation: isConnected ? 'none' : 'pulse 2s infinite'
-                }} />
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  {isConnected ? 'Connected' : 'Disconnected'}
-                </Text>
-              </div>
-              {lastUpdated && (
-                <Text type="secondary" style={{ fontSize: 11 }}>Last updated: {lastUpdated}</Text>
-              )}
-            </Space>
+              
+              <Button
+                icon={<ReloadOutlined />}
+                onClick={() => {
+                  if (isConnected && !loading) {
+                    setLoading(true);
+                    wsManager.disconnect('/ws/gas');
+                    wsManager.disconnect('/ws/status');
+                    setIsConnected(false);
+                    setConnectionError(false);
+                    setTimeout(() => {
+                      connectGasWebSocket();
+                      connectStatusWebSocket();
+                      setLoading(false);
+                    }, 500);
+                  } else if (!isConnected) {
+                    setLoading(true);
+                    connectGasWebSocket();
+                    connectStatusWebSocket();
+                    setTimeout(() => setLoading(false), 1000);
+                  }
+                }}
+                loading={loading}
+                style={{
+                  background: "#1890ff",
+                  border: "1px solid #1890ff",
+                  borderRadius: "3px",
+                  fontWeight: "normal",
+                  fontSize: "12px"
+                }}
+              >
+                {isConnected ? 'รีเฟรช' : 'เชื่อมต่อใหม่'}
+              </Button>
+            </div>
           </div>
 
           {connectionError ? (
-            <div style={{ marginTop: 48, textAlign: "center", color: CEMS_THEME.danger, fontSize: 18 }}>
-              ❌ ไม่สามารถเชื่อมต่อข้อมูลได้ กรุณาตรวจสอบหรือกด Refresh
+            <div style={{ 
+              marginTop: "48px", 
+              textAlign: "center", 
+              background: "white",
+              padding: "48px",
+              borderRadius: "16px",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.1)"
+            }}>
+              <div style={{ fontSize: "64px", marginBottom: "16px" }}>❌</div>
+              <Title level={3} style={{ color: "#ff4d4f", marginBottom: "8px" }}>
+                ไม่สามารถเชื่อมต่อข้อมูลได้
+              </Title>
+              <Text type="secondary" style={{ fontSize: "16px" }}>
+                กรุณาตรวจสอบการเชื่อมต่อหรือกดปุ่ม "เชื่อมต่อใหม่"
+              </Text>
             </div>
           ) : (
             <>
-              <Row gutter={[16, 16]}>{stackItems.map((i) => renderCard(i))}</Row>
-              <Divider style={{ margin: "40px 0 32px" }} />
-              <Title level={4} style={{ color: THEME_COLOR }}>Corrected to 7% Vol Oxygen</Title>
-              <Row gutter={[16, 16]}>{correctedItems.map((i) => renderCard(i, true))}</Row>
+              <div style={{
+                marginBottom: "24px"
+              }}>
+                <div style={{ 
+                  marginBottom: "16px"
+                }}>
+                  <Title level={4} style={{ margin: 0, color: "#000", fontSize: "18px", fontWeight: "bold" }}>
+                    ข้อมูลการตรวจสอบแบบเรียลไทม์
+                  </Title>
+                  <Text type="secondary" style={{ fontSize: "12px", color: "#333" }}>
+                    Real-time monitoring data from CEMS sensors
+                  </Text>
+                </div>
+                
+                <Row gutter={[16, 16]}>{stackItems.map((i) => renderCard(i))}</Row>
+              </div>
+              
+              <div style={{
+                marginBottom: "24px"
+              }}>
+                <div style={{ 
+                  marginBottom: "16px"
+                }}>
+                  <Title level={4} style={{ margin: 0, color: "#1890ff" }}>
+                    ค่าที่ปรับแก้ (Corrected to 7% Vol Oxygen)
+                  </Title>
+                  <Text type="secondary" style={{ fontSize: "14px" }}>
+                    Calibrated values for standard oxygen concentration
+                  </Text>
+                </div>
+                
+                <Row gutter={[16, 16]}>{correctedItems.map((i) => renderCard(i, true))}</Row>
+              </div>
             </>
           )}
 
-          <div style={{
-            position: 'fixed',
-            bottom: '10px',
-            right: '10px',
-            background: 'rgba(255,255,255,0.9)',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            fontSize: '11px',
-            color: '#666',
-            border: '1px solid #e0e0e0',
-            zIndex: 1000
-          }}>
-            v1.0.1 - {new Date().toLocaleDateString('th-TH')}
-          </div>
+                    {/* global version badge is handled in SidebarLayout */}
         </div>
-      </Spin>
+      
+ 
     </div>
   );
 }

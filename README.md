@@ -1,181 +1,167 @@
 # CEMS (Continuous Emission Monitoring System)
 
-ระบบติดตามการปล่อยมลพิษต่อเนื่องแบบครบวงจร พัฒนาด้วย React + FastAPI
+ระบบติดตามการปล่อยมลพิษต่อเนื่อง พัฒนาด้วย React (Vite) + FastAPI + Electron และบันทึกข้อมูล InfluxDB
 
-## 🚀 การติดตั้งและใช้งาน
+## โครงสร้างโปรเจกต์
 
-### Backend Setup
-
-1. **ติดตั้ง Python Dependencies**
-```bash
-cd cems-backend
-pip install -r requirements.txt
+```
+ASE_CEMS2/
+├─ cems-frontend-new/           # Frontend (React + Vite + Ant Design)
+│  ├─ src/
+│  ├─ electron/                 # Electron main process + backend bootstrap
+│  └─ package.json
+├─ cems-backend/                # Backend (FastAPI)
+│  ├─ main.py                   # FastAPI app, WebSockets, REST APIs
+│  ├─ database_influx.py        # InfluxDB manager/utilities
+│  ├─ dist/                     # Built frontend (served by backend/electron)
+│  └─ requirements.txt
+├─ electron/                    # Electron (legacy runner)
+├─ docker-compose.yml           # InfluxDB stack
+├─ README.md                    # เอกสารนี้
+├─ BUILD_FIX_README.md          # คู่มือแก้ปัญหา build
+├─ BUILD_SUCCESS_SUMMARY.md     # สรุปขั้นตอน build ที่สำเร็จ
+├─ CROSS_MACHINE_SETUP.md       # การใช้งานข้ามเครื่อง + Demo mode
+├─ MODBUS_SETUP_GUIDE.md        # ตั้งค่า Modbus จริง/จำลอง
+├─ MULTI_DATA_TYPE_SUPPORT.md   # รองรับข้อมูลหลายแบบ (int/float/byte order)
+└─ cems-backend/INFLUXDB_TROUBLESHOOTING.md
 ```
 
-2. **รัน Backend Server**
+## การติดตั้งและรันแบบนักพัฒนา
+
+### 1) Backend (FastAPI)
+
 ```bash
+cd cems-backend
+python -m venv .venv && .venv\Scripts\activate   # Windows PowerShell
+pip install -r requirements.txt
 python main.py
 # หรือ
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Frontend Setup
+Backend จะพร้อมที่ http://127.0.0.1:8000
 
-1. **ติดตั้ง Node.js Dependencies**
+### 2) Frontend (React + Vite)
+
 ```bash
-cd cems-frontend
+cd cems-frontend-new
 npm install
-```
 
-2. **สร้างไฟล์ .env**
-```bash
-# สร้างไฟล์ .env ใน cems-frontend/
-VITE_BACKEND_URL=http://127.0.0.1:8000
-```
+# ตั้งค่า .env (เชื่อมต่อ backend)
+echo VITE_BACKEND_URL=http://127.0.0.1:8000 > .env
 
-3. **รัน Frontend Development Server**
-```bash
+# รัน dev server
 npm run dev
 ```
 
-## 📋 หน้าต่างๆ ในระบบ
+Frontend dev server จะรันบน http://127.0.0.1:5173 (ใช้ HashRouter)
 
-### 🏠 Home
-- แสดงข้อมูล Gas Values แบบ Real-time
-- แสดง Corrected Values (ปรับเทียบที่ 7% O2)
-- แสดงสถานะ Alarm และ Threshold
-- รองรับการ Refresh ข้อมูล
+### 3) Electron (ตัวเลือก: dev แบบเดสก์ท็อป)
 
-### 📊 Status
-- แสดงสถานะระบบทั้งหมด (15 สถานะ)
-- แสดง Alarm Status (4 อาการเตือน)
-- เชื่อมต่อผ่าน WebSocket แบบ Real-time
-- รองรับ API Mode และ Modbus Mode
-
-### 📄 DataLogs
-- แสดงข้อมูล Log ล่าสุด 10 รายการ
-- รองรับการ Filter ตามช่วงเวลา
-- ดาวน์โหลดไฟล์ CSV
-- แสดง Threshold Colors
-
-### 🔄 Blowback
-- ตั้งค่า Blowback Parameters
-- Manual Blowback Control
-- แสดงสถานะ Blowback แบบ Real-time
-- ตรวจสอบ Modbus Connection
-
-### ⚙️ Config
-- ตั้งค่าการเชื่อมต่อ Modbus/API
-- จัดการ Mapping Configuration
-- รองรับ TCP, RTU, API Modes
-- บันทึกการตั้งค่าลงไฟล์
-
-### 🌐 WebPortal
-- Dashboard แบบครบวงจร
-- Quick Actions และ System Status
-- Data Management และ System Control
-- รองรับการดาวน์โหลดหลายรูปแบบ
-
-## 🔧 การตั้งค่า
-
-### Modbus Configuration
-```json
-{
-  "mode": "tcp",
-  "ip": "127.0.0.1",
-  "port": 1502,
-  "slaveId": 1,
-  "registerType": "holding"
-}
+```bash
+cd cems-frontend-new
+npm run electron-dev       # เปิด Vite dev + เปิด Electron
 ```
 
-### Mapping Configuration
-```json
-[
-  {"name": "SO2", "address": 0, "unit": "ppm", "formula": "x"},
-  {"name": "NOx", "address": 1, "unit": "ppm", "formula": "x"},
-  {"name": "O2", "address": 2, "unit": "%", "formula": "x/10"},
-  {"name": "CO", "address": 3, "unit": "ppm", "formula": "x"},
-  {"name": "Dust", "address": 4, "unit": "mg/m³", "formula": "x"},
-  {"name": "Temperature", "address": 5, "unit": "°C", "formula": "x/10"},
-  {"name": "Velocity", "address": 6, "unit": "m/s", "formula": "x/10"},
-  {"name": "Flowrate", "address": 7, "unit": "m³/hr", "formula": "x"},
-  {"name": "Pressure", "address": 8, "unit": "Pa", "formula": "x"}
-]
+หมายเหตุ: Electron จะโหลดไฟล์จาก `cems-backend/dist/index.html` เมื่อทำการ build production
+
+## การ Build เป็นแอปเดสก์ท็อป
+
+1) Build backend เป็น executable (หากยังไม่มีใน `cems-backend/dist/backend.exe`)
+
+ดูขั้นตอนที่ทดสอบแล้วใน:
+- BUILD_FIX_README.md
+- BUILD_SUCCESS_SUMMARY.md
+
+โดยสรุป (ตัวอย่าง):
+```bash
+cd cems-backend
+pyinstaller backend.spec
 ```
 
-### Blowback Settings
-```json
-{
-  "every": 30,
-  "period": 2,
-  "hold": 2,
-  "pulseOn": 1,
-  "pulseOff": 5
-}
+2) Build frontend และจัดแพ็กด้วย Electron Builder
+
+```bash
+cd cems-frontend-new
+npm run build
+npm run dist
 ```
 
-## 🌐 API Endpoints
+ผลลัพธ์ไฟล์ติดตั้งจะอยู่ในโฟลเดอร์ `build-webportal/`
 
-### WebSocket Endpoints
-- `/ws/gas` - Real-time gas data
-- `/ws/status` - System status updates
-- `/ws/blowback-status` - Blowback status
+## การตั้งค่าแวดล้อมและไฟล์สำคัญ
 
-### REST API Endpoints
-- `GET /health` - Health check
-- `GET /get-config` - Get connection config
-- `POST /save-config` - Save connection config
-- `GET /get-mapping-config` - Get mapping config
-- `POST /save-mapping-config` - Save mapping config
-- `GET /get-blowback-settings` - Get blowback settings
-- `POST /write-blowback-settings` - Save blowback settings
-- `POST /trigger-manual-blowback` - Trigger manual blowback
-- `GET /log-preview` - Get recent logs
-- `GET /download-logs` - Download CSV logs
+- Frontend: `cems-frontend-new/.env`
+  - `VITE_BACKEND_URL=http://127.0.0.1:8000`
+- Backend config: `cems-backend/config.json`
+- Mapping: `cems-backend/mapping.json`
 
-## 🛠️ เทคโนโลยีที่ใช้
+สำหรับการใช้งานข้ามเครื่อง/เดโม: ดู `CROSS_MACHINE_SETUP.md`
 
-### Frontend
-- React 18
-- Ant Design 5
-- React Router DOM
-- Day.js
-- Vite
+## Modbus และการรองรับชนิดข้อมูล
 
-### Backend
-- FastAPI
-- PyModbus
-- WebSockets
-- CSV/JSON File I/O
+- ตั้งค่าอุปกรณ์/ที่อยู่ register ที่ `cems-backend/mapping.json`
+- ชนิดข้อมูลและ byte order ดูรายละเอียดที่ `MULTI_DATA_TYPE_SUPPORT.md`
+- การเชื่อมต่ออุปกรณ์จริง/จำลอง ดู `MODBUS_SETUP_GUIDE.md`
 
-## 📝 หมายเหตุ
+## InfluxDB (ตัวเลือกสำหรับบันทึก/อ่านข้อมูล)
 
-1. **Mock Data**: ระบบใช้ Mock Data เมื่อไม่สามารถเชื่อมต่อ Modbus ได้
-2. **Auto Reconnect**: WebSocket จะ reconnect อัตโนมัติเมื่อขาดการเชื่อมต่อ
-3. **Error Handling**: มีการจัดการ Error และแสดงข้อความแจ้งเตือน
-4. **Responsive Design**: รองรับการแสดงผลบนหน้าจอขนาดต่างๆ
+- ใช้ `docker-compose.yml` ที่ root เพื่อรัน InfluxDB stack
+- คู่มือแก้ปัญหา/ตั้งค่า token/org/bucket: `cems-backend/INFLUXDB_TROUBLESHOOTING.md`
 
-## 🔍 การแก้ไขปัญหา
+## Endpoints ที่ใช้งานจริง (ตาม cems-backend/main.py)
 
-### ปัญหาที่พบบ่อย
+WebSocket:
+- `ws://127.0.0.1:8000/ws/gas` – ข้อมูลก๊าซแบบเรียลไทม์
+- `ws://127.0.0.1:8000/ws/status` – สถานะระบบ + alarm
+- `ws://127.0.0.1:8000/ws/blowback-status` – สถานะ blowback
 
-1. **Frontend แสดง "--" หรือ "NaN"**
-   - ตรวจสอบ Backend URL ใน .env
-   - ตรวจสอบการเชื่อมต่อ WebSocket
+REST:
+- `GET  /health` – สถานะระบบ
+- `GET  /log-preview` – ตัวอย่างข้อมูลล่าสุด (fallback หน้า DataLogs)
+- `GET  /download-logs` – ดาวน์โหลดข้อมูล CSV (รองรับพารามิเตอร์ช่วงเวลา)
+- `GET  /config` / `PUT /config` – อ่าน/อัปเดตการตั้งค่า
+- `GET  /mapping` / `PUT /mapping` – อ่าน/อัปเดต mapping
+- `POST /reload-config` – โหลดไฟล์ config/mapping ใหม่และรีเซ็ต client
+- `POST /reset-config` – รีเซ็ตเป็นค่าเริ่มต้น
+- `POST /api/scan-devices` – สแกนหาอุปกรณ์ Modbus TCP/RTU
+- `GET  /raw-influxdb` – ดูข้อมูลดิบใน InfluxDB (ตรวจสอบระบบ)
 
-2. **Config Page Error**
-   - ตรวจสอบ endpoint `/get-mapping-config`
-   - ตรวจสอบ Tabs component (ใช้ AntTabs แทน Tabs)
+หมายเหตุ: ยังไม่มี `/login` และ `/change-password` ใน backend ณ ตอนนี้ แม้ frontend จะมี UI ที่เรียก endpoint ดังกล่าว
 
-3. **Blowback ไม่ทำงาน**
-   - ตรวจสอบ Modbus Connection
-   - ตรวจสอบ Blowback Settings
+## การใช้งาน Blowback
 
-4. **DataLogs ไม่แสดงข้อมูล**
-   - ตรวจสอบไฟล์ CEMS_DataLog.csv
-   - ตรวจสอบ endpoint `/log-preview`
+- คู่มือ: `cems-backend/BLOWBACK_README.md`
+- ควบคุมผ่าน `POST /trigger-manual-blowback` และติดตามสถานะผ่าน `/ws/blowback-status`
 
-## 📞 การติดต่อ
+## Troubleshooting / เอกสารเพิ่มเติม
 
-หากมีปัญหาหรือต้องการความช่วยเหลือ กรุณาติดต่อทีมพัฒนา 
+- Build และการแก้ไขปัญหา: `BUILD_FIX_README.md`, `BUILD_SUCCESS_SUMMARY.md`
+- InfluxDB: `cems-backend/INFLUXDB_TROUBLESHOOTING.md`
+- ข้ามเครื่อง + Demo Mode: `CROSS_MACHINE_SETUP.md`
+- Modbus จริง/จำลอง: `MODBUS_SETUP_GUIDE.md`
+- รองรับข้อมูลหลายแบบ: `MULTI_DATA_TYPE_SUPPORT.md`
+
+## หมายเหตุโครงสร้าง UI
+
+- Frontend ใช้ `HashRouter` และมีหน้า:
+  - Home, Status, DataLogs, Graph, Blowback, WebPortal, Config, Account
+- การป้องกันหน้าใช้งานอิงบทบาทใน `cems-frontend-new/src/App.jsx` (Protected routes)
+
+## เวอร์ชัน
+
+- Backend `/health` แสดงค่า `version` (เช็คในรันไทม์)
+
+---
+หากทำตามขั้นตอนในเอกสารนี้และไฟล์อ้างอิงที่แนบไว้ จะสามารถรัน dev, build แอปเดสก์ท็อป, และใช้งานระบบได้ครบถ้วน
+
+
+
+
+
+
+
+
+
+
+

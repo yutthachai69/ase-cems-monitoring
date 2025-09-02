@@ -294,7 +294,7 @@ export default function Blowback() {
         </Col>
         
         <Col xs={24} lg={12}>
-          <Card title="📊 Status" size="small">
+          <Card title="Status" size="small">
             <Space direction="vertical" style={{ width: "100%" }}>
               <div>
                 <Text strong>Modbus Status: </Text>

@@ -5,7 +5,7 @@ from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 from influxdb_client.client.exceptions import InfluxDBError
 
-# Config file path
+# Config file path (original relative)
 CONFIG_FILE = "config.json"
 
 def load_config():
@@ -32,7 +32,8 @@ def get_influx_config():
         'url': influx_config.get('url', 'http://localhost:8086'),
         'token': influx_config.get('token', ''),
         'org': influx_config.get('org', 'CEMS'),
-        'bucket': influx_config.get('bucket', 'cems_data')
+        'bucket': influx_config.get('bucket', 'cems_data'),
+        'agg_bucket': influx_config.get('agg_bucket', influx_config.get('bucket', 'cems_data'))
     }
 
 class InfluxDBManager:
@@ -82,7 +83,7 @@ class InfluxDBManager:
     def save_sensor_data(self, data):
         """บันทึกข้อมูลเซ็นเซอร์"""
         if not self.connected:
-            print("❌ Not connected to InfluxDB")
+            print(" Not connected to InfluxDB")
             return False
             
         try:
@@ -110,14 +111,14 @@ class InfluxDBManager:
                     org=self.config['org'],
                     record=points
                 )
-                print(f"✅ Saved {len(points)} data points to InfluxDB")
+                print(f" Saved {len(points)} data points to InfluxDB")
                 return True
             else:
-                print("⚠️ No valid data points to save")
+                print(" No valid data points to save")
                 return False
                 
         except Exception as e:
-            print(f"❌ Error saving to InfluxDB: {e}")
+            print(f" Error saving to InfluxDB: {e}")
             return False
     
     def save_system_alert(self, alert_data):

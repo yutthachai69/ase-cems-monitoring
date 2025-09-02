@@ -28,7 +28,7 @@ function createWindow() {
     height: 900,
     minWidth: 1200,
     minHeight: 800,
-    icon: path.join(__dirname, '../assets/ASEicon.ico'),
+    icon: path.join(__dirname, '../public/ase-cems.ico'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

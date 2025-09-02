@@ -1,3 +1,26 @@
+/* CEMS Dashboard Styles */
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+.cems-section .anticon {
+  transition: all 0.3s ease;
+}
+
+.cems-section .anticon:hover {
+  transform: scale(1.1);
+}
+
+.cems-section .ant-card {
+  transition: all 0.3s ease;
+}
+
+.cems-section .ant-card:hover {
+  transform: translateY(-2px);
+}
+
 /* Responsive table styles for DataLogs */
 .ant-table-wrapper {
   overflow-x: auto;
