@@ -91,7 +91,7 @@ export default function Account() {
     }
     setLoading(true);
     try {
-      const res = await fetch(`${backendUrl}/change-password`, {
+      const res = await fetch(`${backendUrl}/api/auth/change-password`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

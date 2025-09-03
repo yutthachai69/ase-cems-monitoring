@@ -64,7 +64,7 @@ class WebSocketManager {
         const reconnectTimer = setTimeout(() => {
           console.debug(`🔄 Reconnecting to ${endpoint}...`);
           this.connect(endpoint, onMessage, onError, onClose);
-        }, 5000);
+        }, 10000); // เพิ่ม delay เป็น 10 วินาที
         
         this.reconnectTimers.set(endpoint, reconnectTimer);
       }

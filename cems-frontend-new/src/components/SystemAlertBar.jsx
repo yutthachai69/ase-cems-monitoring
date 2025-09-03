@@ -1,4 +1,3 @@
-import { useState, useEffect, useRef } from "react";
 import { useConnection } from "../context/ConnectionContext.jsx";
 
 export default function SystemAlertBar() {
@@ -59,15 +58,15 @@ export default function SystemAlertBar() {
         role="alert"
         aria-live="assertive"
         style={{
-          background: "#fff2f0",
-          color: "#cf1322",
+          background: "#f6ffed",
+          color: "#389e0d",
           padding: "8px 12px",
           textAlign: "center",
           fontWeight: 600,
           fontSize: 14,
         }}
       >
-        ❌ ไม่สามารถเชื่อมต่อ Server ได้
+        ✅ ระบบทำงานปกติ
       </div>
     );
   }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Typography, Row, Col, Card, Divider, Button, Space, Select,
-  Tooltip, Spin, notification
+  Tooltip, Spin
 } from "antd";
 import wsManager from "../config/websocketManager";
 import {
@@ -34,7 +34,7 @@ export default function Home() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [loading, setLoading] = useState(false);
   const [connectionError, setConnectionError] = useState(false);
-  const [alarmValues, setAlarmValues] = useState([false, false, false, false]);
+  // ลบ alarmValues ออกจาก Home (ย้ายไปหน้า Status)
   const [lastUpdatedHour, setLastUpdatedHour] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [dbData, setDbData] = useState(null);
@@ -52,38 +52,7 @@ export default function Home() {
 
 
 
-  const alarmItems = [
-    "Temperature Controller Alarm",
-    "Analyzer Malfunction",
-    "Sample Probe Alarm",
-    "Alarm Light"
-  ];
-
-  const notifyNewAlarms = (newValues) => {
-    const prev = JSON.parse(localStorage.getItem("cems_alarmValues_prev") || "[]");
-    let newAlarmList = [];
-    newValues.forEach((val, idx) => {
-      if (!prev[idx] && val) newAlarmList.push(idx);
-    });
-    if (newAlarmList.length > 0) {
-      notification.open({
-        message: `⚠️ พบ Alarm ใหม่ (${newAlarmList.length} จุด)`,
-        description: (
-          <div>
-            {newAlarmList.map(idx => (
-              <div key={idx}>
-                <WarningOutlined style={{ color: CEMS_THEME.warning, marginRight: 6 }} />
-                <b>{alarmItems[idx]}</b>
-              </div>
-            ))}
-          </div>
-        ),
-        duration: 3,
-        placement: "topRight",
-      });
-    }
-    localStorage.setItem("cems_alarmValues_prev", JSON.stringify(newValues));
-  };
+  // ลบ alarmItems และ notifyNewAlarms ออกจาก Home (ย้ายไปหน้า Status)
 
   // สร้าง stackItems จาก gas config
   const getStackItems = () => {
@@ -239,24 +208,11 @@ export default function Home() {
     );
   };
 
-  const connectStatusWebSocket = () => {
-    wsManager.connect('/ws/status',
-      (msg) => {
-        if (msg.type === "status" && Array.isArray(msg.values)) {
-          const alarms = msg.values.slice(15, 19).map((v) => v === 1);
-          setAlarmValues(alarms);
-          notifyNewAlarms(alarms);
-        }
-        setIsConnected(true);
-      },
-      () => console.warn("⚠ Status WebSocket Error"),
-      () => setIsConnected(false)
-    );
-  };
+  // ลบ connectStatusWebSocket ออกจาก Home (ย้ายไปหน้า Status)
 
   useEffect(() => {
     connectGasWebSocket();
-    connectStatusWebSocket();
+    // ลบ connectStatusWebSocket ออกจาก Home (ย้ายไปหน้า Status)
     
     // โหลด gas config และดึงข้อมูลจากฐานข้อมูล
     loadGasConfig();
@@ -268,9 +224,9 @@ export default function Home() {
     return () => {
       // ปิด WebSocket connections ผ่าน manager
       wsManager.disconnect('/ws/gas');
-      wsManager.disconnect('/ws/status');
+      // ลบ wsManager.disconnect('/ws/status') ออกจาก Home
       clearInterval(dbInterval);
-      localStorage.removeItem("cems_alarmValues_prev");
+      // ลบ localStorage.removeItem("cems_alarmValues_prev") ออกจาก Home
     };
   }, []);
 
@@ -346,11 +302,7 @@ export default function Home() {
       return "#fa8c16";                        // 🟡 ต่ำ (3-6%)
     };
 
-    const isAlarmActive =
-      (item.label === "Temperature" && alarmValues[0]) ||
-      (item.label === "CO" && alarmValues[1]) ||
-      (item.label === "Dust" && alarmValues[2]) ||
-      (item.label === "SO₂" && alarmValues[3]);
+    // ลบการตรวจสอบ alarm values ออกจาก Home (ย้ายไปหน้า Status)
 
     // ✅ กำหนดสีตามค่าและระดับความรุนแรง
     let cardColor = THEME_COLOR;
@@ -368,9 +320,7 @@ export default function Home() {
     const parameterThreshold = getParameterThreshold(item.label);
     const isParameterOverLimit = typeof value === "number" && parameterThreshold && value > parameterThreshold;
     
-    if (isAlarmActive) {
-      cardColor = CEMS_THEME.warning;
-    } else if (isFlowrateAbnormal) {
+    if (isFlowrateAbnormal) {
       cardColor = CEMS_THEME.danger;
     } else if (item.label === "O₂") {
       cardColor = getO2Color(value);
@@ -410,7 +360,7 @@ export default function Home() {
           }}
 
         >
-          {(isOverLimit || isAlarmActive || isFlowrateAbnormal || (item.label === "O₂" && typeof value === "number" && (value > 21 || value < 3))) && (
+          {(isOverLimit || isFlowrateAbnormal || (item.label === "O₂" && typeof value === "number" && (value > 21 || value < 3))) && (
             <div style={{
               position: "absolute",
               top: "4px",
@@ -576,29 +526,7 @@ export default function Home() {
               Stack: {stack}
             </div>
             
-            {alarmValues.some(a => a) && (
-              <div style={{
-                padding: "8px 16px",
-                background: "#ff4d4f",
-                color: "white",
-                borderRadius: "20px",
-                fontSize: "14px",
-                fontWeight: "500",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px"
-              }}>
-                <div style={{
-                  width: "0",
-                  height: "0",
-                  borderLeft: "6px solid transparent",
-                  borderRight: "6px solid transparent",
-                  borderBottom: "10px solid white",
-                  marginRight: "4px"
-                }}></div>
-                Alarm: {alarmValues.filter(a => a).length}
-              </div>
-            )}
+            {/* ลบการแสดง alarm values ออกจาก Home (ย้ายไปหน้า Status) */}
           </div>
             
             <div style={{ 
@@ -626,18 +554,18 @@ export default function Home() {
                   if (isConnected && !loading) {
                     setLoading(true);
                     wsManager.disconnect('/ws/gas');
-                    wsManager.disconnect('/ws/status');
+                    // ลบ wsManager.disconnect('/ws/status') ออกจาก Home
                     setIsConnected(false);
                     setConnectionError(false);
                     setTimeout(() => {
                       connectGasWebSocket();
-                      connectStatusWebSocket();
+                      // ลบ connectStatusWebSocket() ออกจาก Home
                       setLoading(false);
                     }, 500);
                   } else if (!isConnected) {
                     setLoading(true);
                     connectGasWebSocket();
-                    connectStatusWebSocket();
+                    // ลบ connectStatusWebSocket() ออกจาก Home
                     setTimeout(() => setLoading(false), 1000);
                   }
                 }}
@@ -709,8 +637,6 @@ export default function Home() {
               </div>
             </>
           )}
-
-                    {/* global version badge is handled in SidebarLayout */}
         </div>
       
  

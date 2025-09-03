@@ -73,12 +73,10 @@ export default function Config() {
 
   
 
-  // Form instances - ใช้ lazy initialization เพื่อป้องกัน warning
+  // Form instances
   const [deviceForm] = Form.useForm();
   const [mappingForm] = Form.useForm();
   const [gasForm] = Form.useForm();
-  
-  // ใช้ lazy initialization สำหรับ systemForm - สร้างเมื่อจำเป็น
   const [systemForm] = Form.useForm();
   
 
@@ -349,45 +347,68 @@ export default function Config() {
         signal: AbortSignal.timeout(3000),
         headers: { ...authHeaders }
       });
-      setBackendConnected(res.ok);
-      return res.ok;
-    } catch {
+      const isConnected = res.ok;
+      setBackendConnected(isConnected);
+      console.log("Backend connection status:", isConnected);
+      return isConnected;
+    } catch (error) {
+      console.log("Backend connection error:", error);
       setBackendConnected(false);
       return false;
     }
   };
 
-  // Load configuration data
+  // Load configuration data (รีเฟรชหน้า)
   const loadConfigData = async () => {
-    // ลบการตรวจสอบ backendConnected ออก เพื่อให้โหลดข้อมูลได้
-    // if (!backendConnected) return;
-    
+    // รีเฟรชทั้งหน้าเลย ไม่ต้องรอ
+    window.location.reload();
+  };
+
+  // Load configuration data (โหลดข้อมูลแบบปกติ)
+  const loadConfigDataNormal = async () => {
     setLoading(true);
     try {
-      // Load config
+      console.log("🔄 กำลังโหลดข้อมูล...");
+      console.log("🔧 Backend URL:", backendUrl);
+      console.log("🔧 Auth Headers:", authHeaders);
+      
+      // 1. Load config
       const configRes = await fetch(
-        `${backendUrl}/config?ts=${Date.now()}`,
+        `${backendUrl}/config/?ts=${Date.now()}`,
         { headers: { ...authHeaders }, cache: 'no-store' }
       );
+      console.log("🔧 Config Response Status:", configRes.status, configRes.statusText);
+      console.log("🔧 Config Response Headers:", Object.fromEntries(configRes.headers.entries()));
+      
       if (configRes.ok) {
         const config = await configRes.json();
+        console.log("🔧 Config Data:", config);
         setConfigData(config);
-        
-        // Form values will be set in useEffect after component mounts
+        console.log("✅ โหลด config สำเร็จ");
+        console.log("🚨 DEVICES IN CONFIG:", config?.connection?.devices);
+        console.log("🚨 DEVICES COUNT:", config?.connection?.devices?.length || 0);
+      } else {
+        const errorText = await configRes.text().catch(() => "");
+        console.log("❌ ไม่สามารถโหลด config ได้:", configRes.status, errorText);
       }
 
-      // Load mapping
+      // 2. Load mapping
       const mappingRes = await fetch(
-        `${backendUrl}/mapping?ts=${Date.now()}`,
+        `${backendUrl}/config/mapping?ts=${Date.now()}`,
         { headers: { ...authHeaders }, cache: 'no-store' }
       );
       if (mappingRes.ok) {
         const mapping = await mappingRes.json();
-        console.log("Loaded mapping data:", mapping);
-        console.log("Mapping data length:", mapping.length);
-        console.log("Mapping data structure:", mapping.map((item, idx) => ({ index: idx, ...item })));
+        console.log("✅ โหลด mapping สำเร็จ:", mapping.length, "รายการ");
+        console.log("🔧 Mapping data:", mapping);
         setMappingData(mapping);
+      } else {
+        console.log("❌ ไม่สามารถโหลด mapping ได้:", mappingRes.status);
+        setMappingData([]);
       }
+      
+      console.log("✅ โหลดข้อมูลเสร็จสิ้น");
+      
     } catch (error) {
       message.error("❌ ไม่สามารถโหลดข้อมูลได้");
       console.error("Error loading config:", error);
@@ -408,14 +429,14 @@ export default function Config() {
       console.log("=== TESTING BACKEND MAPPING ENDPOINT ===");
       
       // 1) เอาข้อมูลปัจจุบันมาเก็บไว้
-      const cur = await (await fetch(`${backendUrl}/mapping?ts=${Date.now()}`, { 
+      const cur = await (await fetch(`${backendUrl}/config/mapping?ts=${Date.now()}`, { 
         headers: { ...authHeaders }, 
         cache: 'no-store' 
       })).json();
       console.log("Current mapping length:", cur.length);
 
       // 2) ลอง PUT เป็นอาร์เรย์ว่าง (ถ้า "replace" จริง ควรได้ว่าง)
-      const emptyRes = await fetch(`${backendUrl}/mapping`, {
+      const emptyRes = await fetch(`${backendUrl}/config/mapping`, {
         method: 'PUT',
         headers: { 'Content-Type':'application/json', ...authHeaders },
         body: JSON.stringify([]),
@@ -423,14 +444,14 @@ export default function Config() {
       console.log("PUT empty array response status:", emptyRes.status);
 
       // 3) อ่านกลับ
-      const after = await (await fetch(`${backendUrl}/mapping?ts=${Date.now()}`, { 
+      const after = await (await fetch(`${backendUrl}/config/mapping?ts=${Date.now()}`, { 
         headers: { ...authHeaders }, 
         cache: 'no-store' 
       })).json();
       console.log('After PUT empty array length =', after.length);
 
       // 4) ฟื้นฟูข้อมูลเดิม
-      const restoreRes = await fetch(`${backendUrl}/mapping`, {
+      const restoreRes = await fetch(`${backendUrl}/config/mapping`, {
         method: 'PUT',
         headers: { 'Content-Type':'application/json', ...authHeaders },
         body: JSON.stringify(cur),
@@ -459,10 +480,22 @@ export default function Config() {
       if (response.ok) {
         const data = await response.json();
         setGasConfig(data);
+      } else {
+        console.log("Gas config response not ok:", response.status);
+        // ใช้ค่าเริ่มต้นถ้าไม่มีข้อมูล
+        setGasConfig({
+          default_gases: [],
+          additional_gases: []
+        });
       }
     } catch (error) {
       console.error('Error loading gas config:', error);
       setGasConfigMessage('Error loading gas configuration');
+      // ใช้ค่าเริ่มต้นถ้าเกิด error
+      setGasConfig({
+        default_gases: [],
+        additional_gases: []
+      });
     }
   };
 
@@ -671,7 +704,7 @@ export default function Config() {
         }
       };
 
-      const res = await fetch(`${backendUrl}/config`, {
+      const res = await fetch(`${backendUrl}/config/`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(configToSave)
@@ -720,19 +753,24 @@ export default function Config() {
 
   // Delete device
   const deleteDevice = async (index) => {
-    // ลบการตรวจสอบ backendConnected ออก เพื่อให้ลบอุปกรณ์ได้
-    // if (!backendConnected) {
-    //   message.error("❌ ไม่สามารถเชื่อมต่อกับ Backend ได้");
-    //   return;
-    // }
+    console.log("🚨 DELETE DEVICE FUNCTION CALLED!");
+    console.log("🚨 Index:", index);
+    console.log("🚨 ConfigData:", configData);
+    console.log("🚨 Devices:", configData?.connection?.devices);
 
+    console.log("🚨 ABOUT TO OPEN MODAL.CONFIRM...");
     Modal.confirm({
       title: "ยืนยันการลบ",
       content: "คุณต้องการลบอุปกรณ์นี้หรือไม่?",
       onOk: async () => {
+        console.log("🚨 MODAL.CONFIRM ONOK CLICKED!");
         try {
+          console.log("🚨 STARTING DEVICE DELETION...");
           const newDevices = [...(configData?.connection?.devices || [])];
+          console.log("🔧 Original devices:", newDevices);
+          
           newDevices.splice(index, 1);
+          console.log("🔧 After splice devices:", newDevices);
           
           const configToSave = {
             ...configData,
@@ -741,21 +779,33 @@ export default function Config() {
               devices: newDevices
             }
           };
+          console.log("🔧 Config to save:", configToSave);
 
-          const res = await fetch(`${backendUrl}/config`, {
+          console.log("🔧 Sending request to:", `${backendUrl}/config/devices`);
+          console.log("🔧 Request headers:", { 'Content-Type': 'application/json', ...authHeaders });
+          console.log("🔧 Request body:", JSON.stringify(newDevices, null, 2));
+          
+          const res = await fetch(`${backendUrl}/config/devices`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', ...authHeaders },
-            body: JSON.stringify(configToSave)
+            body: JSON.stringify(newDevices)
           });
 
+          console.log("🔧 Response status:", res.status, res.statusText);
+          console.log("🔧 Response headers:", Object.fromEntries(res.headers.entries()));
+          
           if (res.ok) {
+            const responseData = await res.json();
+            console.log("🔧 Response data:", responseData);
             setConfigData(configToSave);
             message.success("✅ ลบอุปกรณ์เรียบร้อยแล้ว");
           } else {
-            message.error("❌ ไม่สามารถลบอุปกรณ์ได้");
+            const errorText = await res.text();
+            console.error("🔧 Backend error:", res.status, errorText);
+            message.error(`❌ ไม่สามารถลบอุปกรณ์ได้ (${res.status}): ${errorText}`);
           }
         } catch (error) {
-          console.error("Error deleting device:", error);
+          console.error("🔧 Error deleting device:", error);
           message.error("❌ เกิดข้อผิดพลาดในการลบ");
         }
       }
@@ -766,6 +816,21 @@ export default function Config() {
   const saveDevice = async () => {
     console.log("🔧 saveDevice called");
     console.log("Backend connected:", backendConnected);
+    console.log("ConfigData:", configData);
+    
+    if (!configData) {
+      console.log("🔧 ConfigData is null, trying to load config first...");
+      await loadConfigDataNormal();
+      // รอสักครู่แล้วลองใหม่
+      setTimeout(async () => {
+        if (!configData) {
+          message.error("❌ ไม่สามารถโหลดข้อมูล config ได้");
+          return;
+        }
+        await saveDevice();
+      }, 1000);
+      return;
+    }
     
     // ลบการตรวจสอบ backendConnected ออก เพื่อให้เพิ่มอุปกรณ์ได้
     // if (!backendConnected) {
@@ -796,7 +861,7 @@ export default function Config() {
         }
       };
 
-      const res = await fetch(`${backendUrl}/config`, {
+      const res = await fetch(`${backendUrl}/config/`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(configToSave)
@@ -847,55 +912,61 @@ export default function Config() {
 
   // Delete mapping
   const deleteMapping = async (rowKey) => {
-    console.log("=== DELETE MAPPING FUNCTION CALLED ===");
-    console.log("RowKey:", rowKey);
-    console.log("MappingData length:", mappingData.length);
+    console.log("🚨 DELETE MAPPING FUNCTION CALLED!");
+    console.log("🚨 RowKey:", rowKey);
+    console.log("🚨 MappingData:", mappingData);
+    console.log("🚨 MappingData length:", mappingData.length);
     
-    // ลบการตรวจสอบ backendConnected ออก เพื่อให้ลบได้
-    // if (!backendConnected) {
-    //   message.error("❌ ไม่สามารถเชื่อมต่อกับ Backend ได้");
-    //   return;
-    // }
-
+    console.log("🚨 ABOUT TO OPEN MODAL.CONFIRM FOR MAPPING...");
     Modal.confirm({
       title: "ยืนยันการลบ",
       content: "คุณต้องการลบการแมปข้อมูลนี้หรือไม่?",
       onOk: async () => {
+        console.log("🚨 MODAL.CONFIRM ONOK CLICKED FOR MAPPING!");
         try {
-          const idx = mappingData.findIndex(m => mappingRowKey(m) === rowKey);
+          console.log("🚨 STARTING MAPPING DELETION...");
+          const idx = mappingData.findIndex((m, i) => mappingRowKey(m, i) === rowKey);
+          console.log("🔧 Found index:", idx);
+          
           if (idx === -1) {
+            console.error("🔧 Item not found for rowKey:", rowKey);
             message.error("❌ ไม่พบข้อมูลที่ต้องการลบ");
             return;
           }
 
           const newMapping = mappingData.filter((_, i) => i !== idx);
-          
-          console.log("Sending delete request:", { 
-            originalLength: mappingData.length, 
-            newLength: newMapping.length, 
-            deletedItem: mappingData[idx] 
-          });
+          console.log("🔧 Original mapping:", mappingData);
+          console.log("🔧 New mapping:", newMapping);
+          console.log("🔧 Deleted item:", mappingData[idx]);
 
-          const res = await fetch(`${backendUrl}/mapping`, {
+          console.log("🔧 Sending request to:", `${backendUrl}/config/mapping`);
+          console.log("🔧 Request headers:", { 'Content-Type': 'application/json', ...authHeaders });
+          console.log("🔧 Request body:", JSON.stringify(newMapping, null, 2));
+          
+          const res = await fetch(`${backendUrl}/config/mapping`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', ...authHeaders },
             body: JSON.stringify(newMapping)
           });
 
-          console.log("Backend response status:", res.status, res.statusText);
+          console.log("🔧 Response status:", res.status, res.statusText);
+          console.log("🔧 Response headers:", Object.fromEntries(res.headers.entries()));
 
           if (!res.ok) {
             const errText = await res.text().catch(() => "");
-            console.error("Backend error:", res.status, errText);
+            console.error("🔧 Backend error:", res.status, errText);
             message.error("❌ ไม่สามารถลบการแมปข้อมูลได้");
             return;
           }
 
+          const responseData = await res.json();
+          console.log("🔧 Response data:", responseData);
+          
           setMappingData(newMapping);           // อัปเดตหน้าให้เห็นทันที
           await loadConfigData();                // ดึงจาก backend ยืนยันผล
           message.success("✅ ลบการแมปข้อมูลเรียบร้อยแล้ว");
         } catch (e) {
-          console.error("Error deleting mapping:", e);
+          console.error("🔧 Error deleting mapping:", e);
           message.error("❌ เกิดข้อผิดพลาดในการลบ");
         }
       }
@@ -923,7 +994,7 @@ export default function Config() {
       }
 
       // Save to backend
-      const res = await fetch(`${backendUrl}/mapping`, {
+      const res = await fetch(`${backendUrl}/config/mapping`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(newMapping)
@@ -954,17 +1025,9 @@ export default function Config() {
       onOk: async () => {
         setLoading(true);
         try {
-          const res = await fetch(`${backendUrl}/reset-config`, {
-            method: 'POST',
-            headers: { ...authHeaders }
-          });
-          
-          if (res.ok) {
-            message.success("✅ รีเซ็ตการตั้งค่าเรียบร้อยแล้ว");
-            await loadConfigData();
-          } else {
-            message.error("❌ ไม่สามารถรีเซ็ตการตั้งค่าได้");
-          }
+          // ลบ reset-config endpoint ออก เพราะไม่มีใน backend
+          message.info("❌ ฟีเจอร์รีเซ็ตยังไม่พร้อมใช้งาน");
+          // await loadConfigData();
         } catch (error) {
           message.error("❌ เกิดข้อผิดพลาดในการรีเซ็ต");
           console.error("Error resetting config:", error);
@@ -975,35 +1038,64 @@ export default function Config() {
     });
   };
 
-  // Load configuration on mount
+  // Load configuration on mount and when component becomes visible
   useEffect(() => {
     const init = async () => {
+      console.log("🔧 Config component mounted, starting initialization...");
       await checkBackendConnection();
-      // ลบการตรวจสอบ backendConnected ออก เพื่อให้โหลดข้อมูลได้
-      await loadConfigData();
+      console.log("🔧 Backend connection checked");
+      // โหลดข้อมูลแบบปกติ ไม่รีเฟรชหน้า
+      await loadConfigDataNormal();
+      console.log("🔧 Config data loaded");
       await loadGasConfig();
+      console.log("🔧 Gas config loaded");
+      
+      // ไม่ต้องสร้าง systemForm ใน useEffect
     };
     init();
   }, []); // ลบ dependency บน backendConnected ออก
 
-  // Set form values after component mounts
+  // ลบการเช็ค backend connection เมื่อเปลี่ยน tab (หยุดการเช็คซ้ำ)
+  // useEffect(() => {
+  //   const checkConnection = async () => {
+  //     await checkBackendConnection();
+  //   };
+  //   checkConnection();
+  // }, [activeTab]);
+
+  // Debug: Log configData changes
   useEffect(() => {
-    if (configData && systemForm) {
-      try {
-        systemForm.setFieldsValue({
-          log_interval: parseFloat(((configData.connection?.log_interval || 60) / 60).toFixed(2)),
-          reconnect_interval: parseFloat(((configData.connection?.reconnect_interval || 60) / 60).toFixed(2)),
-          temperature_threshold: configData.connection?.parameter_threshold?.Temperature || 80,
-          pressure_threshold: configData.connection?.parameter_threshold?.Pressure || 1000,
-          velocity_threshold: configData.connection?.parameter_threshold?.Velocity || 30,
-          stack_area: configData.stack_info?.area || 1.0,
-          stack_diameter: configData.stack_info?.diameter || 1.0,
-        });
-      } catch (error) {
-        console.log('Form not ready yet:', error);
-      }
-    }
-  }, [configData, systemForm]);
+    console.log("🔧 configData changed:", configData);
+    console.log("🔧 configData is null:", configData === null);
+    console.log("🔧 configData type:", typeof configData);
+  }, [configData]);
+
+  // Debug: Log mappingData
+  useEffect(() => {
+    console.log("🔧 mappingData changed:", mappingData);
+    console.log("🔧 mappingData length:", mappingData.length);
+    console.log("🔧 mappingData type:", typeof mappingData);
+    console.log("🔧 mappingData is array:", Array.isArray(mappingData));
+  }, [mappingData]);
+
+  // Set form values after component mounts
+  // useEffect(() => {
+  //   if (configData && systemForm) {
+  //     try {
+  //       systemForm.setFieldsValue({
+  //         log_interval: parseFloat(((configData.connection?.log_interval || 60) / 60).toFixed(2)),
+  //         reconnect_interval: parseFloat(((configData.connection?.reconnect_interval || 60) / 60).toFixed(2)),
+  //         temperature_threshold: configData.connection?.parameter_threshold?.Temperature || 80,
+  //         pressure_threshold: configData.connection?.parameter_threshold?.Pressure || 1000,
+  //         velocity_threshold: configData.connection?.parameter_threshold?.Velocity || 30,
+  //         stack_area: configData.stack_info?.area || 1.0,
+  //         stack_diameter: configData.stack_info?.diameter || 1.0,
+  //       });
+  //     } catch (error) {
+  //       console.log('Form not ready yet:', error);
+  //     }
+  //   }
+  // }, [configData, systemForm]);
 
   // Device columns for table
   const deviceColumns = [
@@ -1048,7 +1140,13 @@ export default function Config() {
             type="link"
             danger
             icon={<DeleteOutlined />}
-            onClick={() => deleteDevice(index)}
+            onClick={(e) => {
+              e.stopPropagation();
+              console.log("🚨 DELETE DEVICE BUTTON CLICKED!");
+              console.log("🚨 Index:", index);
+              console.log("🚨 Record:", record);
+              deleteDevice(index);
+            }}
           >
             ลบ
           </Button>
@@ -1057,9 +1155,8 @@ export default function Config() {
     },
   ];
 
-  // คีย์ที่ไม่ซ้ำต่อรายการ (ปรับ field ตามจริงที่มีแน่นอน)
-  const mappingRowKey = (m) =>
-    `${m.device}::${m.name}::${m.address}::${m.dataType}::${m.dataFormat}`;
+  // คีย์ที่ไม่ซ้ำต่อรายการ (ใช้ index แทน)
+  const mappingRowKey = (m, index) => index;
 
   // Mapping columns for table
   const mappingColumns = [
@@ -1111,7 +1208,13 @@ export default function Config() {
               type="link"
               danger
               icon={<DeleteOutlined />}
-              onClick={() => deleteMapping(mappingRowKey(record))}
+                          onClick={(e) => {
+              e.stopPropagation();
+              console.log("🚨 DELETE MAPPING BUTTON CLICKED!");
+              console.log("🚨 Record:", record);
+              console.log("🚨 RowKey:", mappingRowKey(record));
+              deleteMapping(mappingRowKey(record));
+            }}
             >
               ลบ
             </Button>
@@ -1175,6 +1278,13 @@ export default function Config() {
               pagination={false}
               size="small"
               scroll={{ x: 'max-content' }}
+              onRow={(record, index) => ({
+                onClick: () => {
+                  console.log("🚨 TABLE ROW CLICKED!");
+                  console.log("🚨 Record:", record);
+                  console.log("🚨 Index:", index);
+                }
+              })}
             />
           </Space>
         </Card>
@@ -1189,15 +1299,62 @@ export default function Config() {
         </span>
       ),
       children: (
-        <Card title="การตั้งค่าการแมปข้อมูล" size="small">
+        <Card 
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <DatabaseOutlined style={{ color: '#722ed1' }} />
+              <span>การตั้งค่าการแมปข้อมูล</span>
+            </div>
+          } 
+          size="small"
+          style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}
+        >
           <Space direction="vertical" style={{ width: "100%" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <Title level={5}>การแมป Registers</Title>
-              <Space>
+            <div style={{ 
+              display: "flex", 
+              justifyContent: "space-between", 
+              alignItems: "center",
+              padding: '12px 0',
+              borderBottom: '1px solid #f0f0f0',
+              marginBottom: '16px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ToolOutlined style={{ color: '#722ed1', fontSize: '16px' }} />
+                <Title level={5} style={{ margin: 0 }}>การแมป Registers</Title>
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '6px',
+                  marginLeft: '16px',
+                  padding: '6px 12px',
+                  borderRadius: '16px',
+                  background: backendConnected ? '#f6ffed' : '#fff2f0',
+                  border: `1px solid ${backendConnected ? '#b7eb8f' : '#ffccc7'}`,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                }}>
+                  <div style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: backendConnected ? '#52c41a' : '#ff4d4f',
+                    boxShadow: backendConnected ? '0 0 4px rgba(82,196,26,0.4)' : '0 0 4px rgba(255,77,79,0.4)'
+                  }} />
+                  <span style={{ 
+                    fontSize: '12px',
+                    color: backendConnected ? '#52c41a' : '#ff4d4f',
+                    fontWeight: '500',
+                    letterSpacing: '0.5px'
+                  }}>
+                    {backendConnected ? 'เชื่อมต่อสำเร็จ' : 'ไม่สามารถเชื่อมต่อ'}
+                  </span>
+                </div>
+              </div>
+              <Space size="middle">
                 <Button
                   icon={<ReloadOutlined />}
                   onClick={loadConfigData}
                   loading={loading}
+                  style={{ borderRadius: '6px' }}
                 >
                   โหลดใหม่
                 </Button>
@@ -1205,6 +1362,12 @@ export default function Config() {
                   type="primary"
                   icon={<PlusOutlined />}
                   onClick={addMapping}
+                  style={{ 
+                    background: "#722ed1", 
+                    borderColor: "#722ed1",
+                    borderRadius: '6px',
+                    boxShadow: '0 2px 4px rgba(114,46,209,0.3)'
+                  }}
                 >
                   เพิ่มการแมป
                 </Button>
@@ -1212,7 +1375,12 @@ export default function Config() {
                   type="primary"
                   icon={<PlusOutlined />}
                   onClick={addStatusAlarmMapping}
-                  style={{ background: "#52c41a", borderColor: "#52c41a" }}
+                  style={{ 
+                    background: "#52c41a", 
+                    borderColor: "#52c41a",
+                    borderRadius: '6px',
+                    boxShadow: '0 2px 4px rgba(82,196,26,0.3)'
+                  }}
                 >
                   เพิ่ม Status/Alarm
                 </Button>
@@ -1220,20 +1388,79 @@ export default function Config() {
                   type="dashed"
                   icon={<BugOutlined />}
                   onClick={testBackendMapping}
+                  style={{ borderRadius: '6px' }}
                 >
                   ทดสอบ Backend
                 </Button>
               </Space>
             </div>
             
-            <Table
-              dataSource={mappingData}
-              columns={mappingColumns}
-              rowKey={mappingRowKey}
-              pagination={false}
-              size="small"
-              scroll={{ x: 'max-content' }}
-            />
+            <div style={{ 
+              background: '#fafafa', 
+              borderRadius: '8px', 
+              padding: '16px',
+              border: '1px solid #f0f0f0'
+            }}>
+              <Table
+                dataSource={mappingData}
+                columns={mappingColumns}
+                rowKey={(record, index) => mappingRowKey(record, index)}
+                pagination={false}
+                size="small"
+                scroll={{ x: 'max-content' }}
+                loading={loading}
+                style={{ 
+                  borderRadius: '8px',
+                  overflow: 'hidden'
+                }}
+                locale={{
+                  emptyText: (
+                    <div style={{ 
+                      padding: '40px 20px', 
+                      textAlign: 'center',
+                      background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
+                      borderRadius: '8px',
+                      margin: '20px'
+                    }}>
+                      <DatabaseOutlined style={{ 
+                        fontSize: '48px', 
+                        color: '#d9d9d9', 
+                        marginBottom: '16px' 
+                      }} />
+                      <div style={{ 
+                        fontSize: '18px', 
+                        color: '#666', 
+                        marginBottom: '8px',
+                        fontWeight: '500'
+                      }}>
+                        ไม่มีข้อมูลการแมป
+                      </div>
+                      <div style={{ 
+                        fontSize: '14px', 
+                        color: '#999',
+                        marginBottom: '16px',
+                        lineHeight: '1.5'
+                      }}>
+                        ยังไม่มีการตั้งค่าการแมปข้อมูล Modbus registers
+                      </div>
+                      <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={addMapping}
+                        style={{ 
+                          background: "#722ed1", 
+                          borderColor: "#722ed1",
+                          borderRadius: '6px',
+                          fontWeight: '500'
+                        }}
+                      >
+                        เพิ่มการแมปแรก
+                      </Button>
+                    </div>
+                  )
+                }}
+              />
+            </div>
           </Space>
         </Card>
       ),
@@ -2047,7 +2274,7 @@ export default function Config() {
           setIsModalVisible(false);
         }}
         width={600}
-        destroyOnClose={false}
+        destroyOnHidden={false}
         maskClosable={false}
         keyboard={false}
         afterClose={() => {
@@ -2517,8 +2744,9 @@ export default function Config() {
           </Form.Item>
 
           {(() => {
-            const selectedName = mappingForm.getFieldValue('name');
-            const deviceType = mappingForm.getFieldValue('device');
+            // ใช้ state แทนการเรียก form.getFieldValue
+            const selectedName = selectedParameter;
+            const deviceType = selectedDevice;
             if (selectedName && deviceType) {
               const address = getStatusAlarmAddress(selectedName, deviceType);
               return (

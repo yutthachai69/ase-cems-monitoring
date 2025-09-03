@@ -28,7 +28,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (roleInput, password) => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
-    const res = await fetch(`${backendUrl}/login`, {
+    const res = await fetch(`${backendUrl}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role: roleInput, password })

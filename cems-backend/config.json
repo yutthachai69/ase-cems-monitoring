@@ -1,51 +1,7 @@
 {
   "connection": {
     "devices": [
-      {
-        "name": "test",
-        "mode": "tcp",
-        "ip": "127.0.0.1",
-        "port": 502,
-        "strictPorts": true,
-        "slaveId": 1,
-        "registerType": "holding"
-      },
-      {
-        "name": "test2",
-        "mode": "tcp",
-        "strictPorts": true,
-        "slaveId": 1,
-        "registerType": "holding",
-        "ip": "127.0.0.1",
-        "port": 503
-      },
-      {
-        "name": "test3",
-        "mode": "tcp",
-        "strictPorts": true,
-        "ip": "127.0.0.1",
-        "port": 504,
-        "slaveId": 1,
-        "registerType": "holding"
-      },
-            {
-        "name": "test4",
-        "mode": "tcp",
-        "ip": "127.0.0.1",
-        "port": 505,
-        "strictPorts": true,
-        "slaveId": 1,
-        "registerType": "holding"
-      },
-      {
-        "name": "test5",
-        "mode": "tcp",
-        "ip": "127.0.0.1",
-        "port": 506,
-        "strictPorts": true,
-        "slaveId": 1,
-        "registerType": "holding"
-      }
+
     ],
     "parameter_threshold": {
       "Temperature": 80,

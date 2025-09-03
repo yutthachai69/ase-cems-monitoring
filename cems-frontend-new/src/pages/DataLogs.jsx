@@ -286,8 +286,8 @@ export default function DataLogs() {
 
       // ไม่ได้เลือกช่วง → ใช้ log-preview หรือ logs/influxdb แบบเดิม
       const url = paramFilter
-        ? `${baseUrl}/logs/influxdb?parameter=${encodeURIComponent(paramFilter)}&limit=200&hours=168`
-        : `${baseUrl}/log-preview`;
+        ? `${baseUrl}/api/logs/influxdb?parameter=${encodeURIComponent(paramFilter)}&limit=200&hours=168`
+        : `${baseUrl}/api/log-preview`;
 
       const res = await fetch(url);
       if (!res.ok) throw new Error("Server Error");
@@ -375,7 +375,7 @@ export default function DataLogs() {
    *  ===================== */
   const handleConfirmDownload = () => {
     const auth = (() => { try { return JSON.parse(localStorage.getItem('auth')) || {}; } catch { return {}; } })();
-    let url = `${baseUrl}/download-logs`;
+    let url = `${baseUrl}/api/download-logs`;
 
     // date params
     if (downloadDates && downloadDates.length === 2) {

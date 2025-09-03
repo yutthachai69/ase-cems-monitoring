@@ -246,9 +246,9 @@ export const ConnectionProvider = ({ children }) => {
 
   useEffect(() => {
     // เชื่อมต่อครั้งแรก
-    const timer = setTimeout(connectWebSockets, 1000);
-    // โหลด config ครั้งแรก
-    loadVisibleParamsFromConfig();
+    const timer = setTimeout(connectWebSockets, 2000); // เพิ่ม delay เป็น 2 วินาที
+    // ไม่โหลด config อัตโนมัติ (ปิดการเรียก API ซ้ำ)
+    // loadVisibleParamsFromConfig();
     
     return () => {
       clearTimeout(timer);
